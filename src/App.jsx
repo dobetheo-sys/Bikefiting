@@ -332,7 +332,13 @@ export default function App() {
   const [result, setResult] = useState(null);
 
   const fail = useCallback((e) => {
-    setError(e instanceof Error ? e.message : String(e));
+    const message =
+      e instanceof Error
+        ? e.message
+        : typeof Event !== 'undefined' && e instanceof Event
+          ? `Erreur inattendue (${e.type}) — vérifie ta connexion et réessaie.`
+          : String(e);
+    setError(message);
     setBusy(null);
   }, []);
 
