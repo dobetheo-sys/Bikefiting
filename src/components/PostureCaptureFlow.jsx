@@ -17,20 +17,37 @@ import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, Ch
 // iOS 13+, non géré ici — dégradation silencieuse (pas d'indicateur) plutôt que crash si
 // l'event n'arrive jamais sur ces appareils.
 
-const CHECKLISTS = {
-  profile_video: [
-    'Caméra fixe (support/trépied), vue de profil, dans l\u2019axe du vélo',
-    'Cadrage : vélo + corps entier visibles',
-    'Même réglage vélo qu\u2019à l\u2019essai précédent si tu compares',
-    'Effort stable, plusieurs tours de pédalage complets pendant l\u2019enregistrement',
-  ],
-  frontal_photo: [
-    'Caméra dans l\u2019axe du vélo, vue de face',
-    'Recul d\u2019au moins 5 m (sinon la mesure de surface est faussée)',
-    'Un repère de longueur connue visible (ex. largeur de cintre) pour l\u2019étalonnage',
-    'Position immobile au moment de la photo',
-  ],
+const MODES = {
+  profile_video: {
+    label: 'vidéo profil',
+    checklist: [
+      'Caméra fixe (support/trépied), vue de profil, dans l\u2019axe du vélo',
+      'Cadrage : vélo + corps entier visibles',
+      'Même réglage vélo qu\u2019à l\u2019essai précédent si tu compares',
+      'Effort stable, plusieurs tours de pédalage complets pendant l\u2019enregistrement',
+    ],
+  },
+  frontal_photo: {
+    label: 'photo frontale',
+    checklist: [
+      'Caméra dans l\u2019axe du vélo, vue de face',
+      'Recul d\u2019au moins 5 m (sinon la mesure de surface est faussée)',
+      'Un repère de longueur connue visible (ex. largeur de cintre) pour l\u2019étalonnage',
+      'Position immobile au moment de la photo',
+    ],
+  },
+  aslr_test: {
+    label: 'test souplesse (ASLR)',
+    checklist: [
+      'Allongé sur le dos, téléphone au sol/sur un support, vue de côté (sagittale)',
+      'Cadrage : hanche et jambe testée entières visibles',
+      'Jambe testée tendue, genou verrouillé',
+      'Lève la jambe le plus haut possible sans plier le genou, sans forcer',
+    ],
+  },
 };
+
+const VIDEO_MODES = new Set(['profile_video', 'aslr_test']);
 
 function formatElapsed(ms) {
   const s = Math.floor(ms / 1000);
@@ -38,9 +55,9 @@ function formatElapsed(ms) {
   return `${String(s).padStart(2, '0')}.${cs}s`;
 }
 
-export default function PostureCaptureFlow({ onCaptured }) {
+export default function PostureCaptureFlow({ onCaptured, initialMode }) {
   const [screen, setScreen] = useState('intro'); // intro | camera | review | calibrate
-  const [mode, setMode] = useState(null);
+  const [mode, setMode] = useState(initialMode ?? null);
   const [error, setError] = useState(null);
   const [recording, setRecording] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -103,6 +120,13 @@ export default function PostureCaptureFlow({ onCaptured }) {
       videoRef.current.play().catch(() => {});
     }
   }, [screen]);
+
+  // Si initialMode est fourni, l'appelant pilote la séquence de capture (App.jsx) :
+  // on saute l'écran de choix et on démarre directement la caméra pour ce mode.
+  useEffect(() => {
+    if (initialMode) startCamera(initialMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMode]);
 
   const startRecording = () => {
     if (!streamRef.current) return;
@@ -281,13 +305,13 @@ export default function PostureCaptureFlow({ onCaptured }) {
                   className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-neutral-400 focus:outline-none"
                 >
                   <span className="tracking-wide uppercase" style={{ fontFamily: 'ui-monospace, monospace' }}>
-                    Checklist · {mode === 'profile_video' ? 'vidéo profil' : 'photo frontale'}
+                    Checklist · {MODES[mode].label}
                   </span>
                   {checklistOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
                 </button>
                 {checklistOpen && (
                   <ul className="px-4 pb-3 space-y-1.5">
-                    {CHECKLISTS[mode].map((item, i) => (
+                    {MODES[mode].checklist.map((item, i) => (
                       <li key={i} className="text-xs text-neutral-300 flex gap-2">
                         <span className="text-amber-400 shrink-0">·</span>
                         {item}
@@ -299,7 +323,7 @@ export default function PostureCaptureFlow({ onCaptured }) {
 
               {/* Contrôles */}
               <div className="bg-black px-6 py-5 flex items-center justify-center">
-                {mode === 'profile_video' ? (
+                {VIDEO_MODES.has(mode) ? (
                   recording ? (
                     <button
                       onClick={stopRecording}

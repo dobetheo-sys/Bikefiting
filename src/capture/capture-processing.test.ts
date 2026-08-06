@@ -1,6 +1,14 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractTrialAngles, computePFSA_cm2, IDX, type PoseFrame, type Landmark, type BinaryMask } from './capture-processing';
+import {
+  extractTrialAngles,
+  extractAslrAngle,
+  computePFSA_cm2,
+  IDX,
+  type PoseFrame,
+  type Landmark,
+  type BinaryMask,
+} from './capture-processing';
 
 /**
  * Coordonnées VÉRIFIÉES À LA MAIN (produit scalaire calculé manuellement, pas juste
@@ -64,6 +72,59 @@ describe('extractTrialAngles — géométrie vérifiée à la main', () => {
 
   test('lève une erreur explicite si aucune frame fournie', () => {
     assert.throws(() => extractTrialAngles([]), /aucune frame/);
+  });
+});
+
+/**
+ * Coordonnées construites (pas juste plausibles) : hanche fixe en (0.5, 0.5), la cuisse
+ * (hanche->genou) tourne de 0° à 75° par pas de 15° sur 6 frames, cheville alignée
+ * hanche-genou-cheville (genou verrouillé, angleAt = 180°). Frame 7 : la cheville quitte
+ * l'alignement (genou qui plie, angleAt << 165°) -> doit stopper la mesure. Frame 8 :
+ * angle cuisse plus élevé (85°) mais genou toujours plié -> NE DOIT PAS être pris en compte
+ * (vérifie que le point d'arrêt est bien respecté, pas juste "le max sur toute la vidéo").
+ */
+function synthAslrFrames(): PoseFrame[] {
+  const hip: Landmark = { x: 0.5, y: 0.5, visibility: 0.95 };
+  const frames: PoseFrame[] = [];
+  let t = 0;
+
+  const pushFrame = (knee: Landmark, ankle: Landmark) => {
+    const landmarks: Landmark[] = new Array(33).fill({ x: 0, y: 0, visibility: 0 });
+    landmarks[IDX.RIGHT_HIP] = hip;
+    landmarks[IDX.LEFT_HIP] = { x: 0, y: 0, visibility: 0 };
+    landmarks[IDX.RIGHT_KNEE] = knee;
+    landmarks[IDX.RIGHT_ANKLE] = ankle;
+    frames.push({ landmarks, timestampMs: t });
+    t += 33;
+  };
+
+  const dirAt = (deg: number) => {
+    const rad = (deg * Math.PI) / 180;
+    return { x: Math.cos(rad), y: -Math.sin(rad) };
+  };
+
+  for (const angle of [0, 15, 30, 45, 60, 75]) {
+    const u = dirAt(angle);
+    const knee = { x: hip.x + 0.2 * u.x, y: hip.y + 0.2 * u.y, visibility: 0.9 };
+    const ankle = { x: hip.x + 0.4 * u.x, y: hip.y + 0.4 * u.y, visibility: 0.85 }; // aligné hanche-genou-cheville
+    pushFrame(knee, ankle);
+  }
+
+  const uBend = dirAt(85);
+  const kneeBend = { x: hip.x + 0.2 * uBend.x, y: hip.y + 0.2 * uBend.y, visibility: 0.9 };
+  pushFrame(kneeBend, { x: kneeBend.x + 0.15, y: kneeBend.y + 0.05, visibility: 0.85 }); // genou qui plie
+  pushFrame(kneeBend, { x: hip.x + 0.4 * uBend.x, y: hip.y + 0.4 * uBend.y, visibility: 0.85 }); // après le point d'arrêt
+
+  return frames;
+}
+
+describe('extractAslrAngle — §3.1 du spec, point d\'arrêt = genou qui plie', () => {
+  test('reprend le max de la cuisse tant que le genou reste verrouillé (75°, pas 85°)', () => {
+    assert.equal(extractAslrAngle(synthAslrFrames()), 75);
+  });
+
+  test('lève une erreur explicite si aucune frame fournie', () => {
+    assert.throws(() => extractAslrAngle([]), /aucune frame/);
   });
 });
 

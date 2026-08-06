@@ -120,6 +120,31 @@ export function extractTrialAngles(frames: PoseFrame[]): TrialAngles {
   };
 }
 
+// ---------- §3.1 — Test ASLR (souplesse hanche) : angle cuisse au point d'arrêt ----------
+// Protocole (spec §3.1) : allongé, jambe testée tendue (genou verrouillé), on la lève le plus
+// haut possible sans plier le genou ; la mesure s'arrête au moment où le genou commence à plier.
+
+const KNEE_STRAIGHT_THRESHOLD = 165; // sous ce seuil, le genou est considéré en train de plier -> fin de mesure
+
+export function extractAslrAngle(frames: PoseFrame[]): number {
+  if (frames.length === 0) throw new Error('extractAslrAngle: aucune frame fournie');
+  const side = pickSide(frames);
+  const S =
+    side === 'RIGHT'
+      ? { HIP: IDX.RIGHT_HIP, KNEE: IDX.RIGHT_KNEE, ANKLE: IDX.RIGHT_ANKLE }
+      : { HIP: IDX.LEFT_HIP, KNEE: IDX.LEFT_KNEE, ANKLE: IDX.LEFT_ANKLE };
+
+  let maxThighAngle = 0;
+  for (const f of frames) {
+    const lm = f.landmarks;
+    const kneeAngle = angleAt(lm[S.HIP], lm[S.KNEE], lm[S.ANKLE]);
+    if (Number.isNaN(kneeAngle) || kneeAngle < KNEE_STRAIGHT_THRESHOLD) break; // genou qui plie -> fin de la mesure valide
+    const thighAngle = angleVsHorizontal(lm[S.HIP], lm[S.KNEE]);
+    if (!Number.isNaN(thighAngle)) maxThighAngle = Math.max(maxThighAngle, thighAngle);
+  }
+  return r1(maxThighAngle);
+}
+
 // ---------- pFSA depuis un masque de silhouette calibré ----------
 
 export interface BinaryMask {

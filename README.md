@@ -17,7 +17,8 @@ handoff structuré pour Claude Code, tests réels avant de considérer une briqu
 | Intégration segmentation (filtrage classes personne+vélo) | `src/capture/segmentation-integration.ts` | Logique de filtrage testée sur masque simulé. `createBikeFitSegmenter()` importe directement `@mediapipe/tasks-vision` (plus de placeholder) et est appelée pour de vrai par `App.jsx` |
 | Intégration pose (résultat MediaPipe → `PoseFrame`) | `src/capture/pose-integration.ts` | Conversion pure testée (3 tests). `createBikeFitPoseLandmarker()` réel, appelé par `App.jsx` |
 | Flux de capture caméra (UI) | `src/components/PostureCaptureFlow.jsx` | **Exécuté dans un vrai Chromium** (Playwright headless, caméra simulée) : intro → sélection mode → caméra → capture photo → étalonnage par taps, sans erreur. Un vrai bug a été trouvé et corrigé ce faisant (apostrophe échappée en texte JSX brut, s'affichait littéralement) |
-| App (orchestration capture → inférence → résultat) | `src/App.jsx` | Build de prod OK (`npm run build`). Le déclenchement réel de l'inférence (`ImageSegmenter.segment()` / `PoseLandmarker.detectForVideo()`) n'a **pas** pu être exercé de bout en bout dans ce sandbox — voir "Limite d'environnement" ci-dessous |
+| Test ASLR (souplesse hanche) | `src/capture/capture-processing.ts` (`extractAslrAngle`) | Testé (angle cuisse au point d'arrêt = genou qui plie, coordonnées construites à la main) |
+| App (session complète : ASLR → profil → essais → `runEngine`) | `src/App.jsx` | Build de prod OK. Flux vérifié dans un vrai Chromium headless (caméra simulée) jusqu'à l'écran d'analyse ASLR inclus (checklist, enregistrement, bouton Valider, écran de chargement, retry) — le déclenchement réel de l'inférence (`ImageSegmenter.segment()` / `PoseLandmarker.detectForVideo()`) reste bloqué par la limite d'environnement ci-dessous |
 
 `npm test` fait tourner tous les tests. `npm run typecheck` type-checke tout `src/`.
 `npm run dev` / `npm run build` lancent l'app (shell Vite + Tailwind posé sur `PostureCaptureFlow.jsx`).
@@ -50,9 +51,12 @@ requête marche en CLI" et "elle échoue dans un vrai navigateur ici".
   bloqué par la limite d'environnement ci-dessus, à faire sur appareil réel
 - Déviation poignet réelle — MediaPipe Pose n'a pas les landmarks de main, stub à 0 actuellement
 - `DeviceOrientationEvent.requestPermission()` iOS 13+ non géré (niveau/tilt en dégradation silencieuse sur iOS)
-- Branchement du moteur (`posture-aero-engine.ts` : validation/score/Pareto) sur les résultats
-  d'un essai réel — l'app affiche aujourd'hui les métriques brutes d'un essai (angles, pFSA),
-  pas encore le score multi-essais (nécessite aussi le profil athlète + test ASLR, cf. spec §2)
+- `headOffset_cm` (position tête, ~10% du score aéro) : stub à 0, jamais mesuré. Dérivable de la
+  photo frontale (nez vs ligne d'épaules, même calibration que la pFSA) mais pas câblé — décision
+  de scope pour rester dans le temps imparti, cf. HANDOFF
+- Boucle de feedback post-sortie (§7 du spec) : `recalibrateWeights()` existe et est testée dans
+  le moteur, mais aucun questionnaire post-sortie n'est branché dans l'app — poids neutres (1.0)
+  utilisés partout
 - Module position guidon (V2)
 
 ## Structure
@@ -84,7 +88,7 @@ src/
 
 ```bash
 npm install
-npm test          # 27 tests, tous passants au moment de l'écriture de ce README
+npm test          # 29 tests, tous passants au moment de l'écriture de ce README
 npm run typecheck
 npm run dev        # app de dev (nécessite un navigateur avec caméra pour la capture réelle)
 npm run build       # build de prod (vérifié, voir dist/)

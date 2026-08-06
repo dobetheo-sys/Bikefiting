@@ -1,9 +1,10 @@
 # Handoff — posture-aero, V1
 
 Repo initié hors de Claude Code (conversation Claude.ai, 06/08/2026). Toute la logique pure
-est écrite et testée (`npm test`, 24/24 passants). Session Claude Code du 06/08/2026 (suite) :
-tâches 1, 2 et 3 ci-dessous sont faites (shell Vite, ImageSegmenter réel, PoseLandmarker réel,
-orchestration App.jsx). Ce qui reste demande un vrai appareil pour être terminé — voir
+est écrite et testée (`npm test`, 29/29 passants). Session Claude Code du 06/08/2026 (suite) :
+shell Vite, ImageSegmenter réel, PoseLandmarker réel, test ASLR (souplesse hanche), et
+`App.jsx` orchestre maintenant la session complète (ASLR → profil → essais → `runEngine`,
+scores + sélection Pareto). Ce qui reste demande un vrai appareil pour être terminé — voir
 "Limite d'environnement rencontrée" ci-dessous, qui explique précisément le blocage.
 
 ## État vérifié (ne pas re-questionner sans raison)
@@ -24,17 +25,34 @@ orchestration App.jsx). Ce qui reste demande un vrai appareil pour être termin�
 - `src/capture/pose-integration.ts` (nouveau) : `createBikeFitPoseLandmarker()` réel
   (`PoseLandmarker`, mode `VIDEO`, modèle `pose_landmarker_lite`). `toPoseFrame()` (conversion
   pure) testée. Jamais tourné contre une vraie vidéo — même blocage.
-- `src/App.jsx` (nouveau) : orchestre `PostureCaptureFlow` → échantillonnage vidéo
-  (`video-frame-sampler.ts`) / segmentation photo → `extractTrialAngles` / `computePFSA_cm2`.
-  Build de prod OK. N'affiche que les métriques brutes d'un essai — ne branche PAS encore
-  `posture-aero-engine.ts` (validation/score/Pareto), qui demande plusieurs essais + profil
-  athlète (test ASLR) : UI pas encore construite pour ça.
-- `src/components/PostureCaptureFlow.jsx` : exécuté dans un vrai Chromium (Playwright headless,
-  `--use-fake-device-for-media-stream`) jusqu'à l'écran d'étalonnage inclus, sans erreur. Bug réel
-  trouvé et corrigé : une apostrophe échappée (`’`) écrite en texte JSX brut (pas dans une
-  string JS) s'affichait littéralement au lieu du caractère — seule ligne 232 était concernée
-  (les autres `’` étaient dans de vraies strings JS, donc déjà correctes). `onCaptured` est
-  maintenant le point d'intégration avec `App.jsx` (plus d'écran "done" interne).
+- `src/capture/capture-processing.ts` (`extractAslrAngle`, nouveau) : angle cuisse/horizontale
+  au point d'arrêt (dernier instant où le genou reste verrouillé, seuil 165° sur l'angle
+  hanche-genou-cheville). Testé avec des coordonnées construites à la main (pas juste
+  "plausibles") vérifiant que le point d'arrêt est bien respecté et qu'un angle plus élevé
+  APRÈS que le genou ait plié n'est pas retenu.
+- `src/App.jsx` (réécrit) : orchestre la session complète —
+  1. capture vidéo ASLR (`mode="aslr_test"`) → `extractAslrAngle` → `aslrToFlexScore`
+  2. formulaire profil (taille en cm, obligatoire ; durée de course, optionnelle)
+  3. boucle d'essais : vidéo profil → photo frontale + étalonnage → formulaire deltas
+     (hauteur selle/reach/drop en mm, saisie manuelle — ce sont des réglages physiques,
+     pas quelque chose qu'une caméra mesure) → assemblage d'un `Trial` complet
+  4. `runEngine(trials, profile, weights)` avec des poids neutres (1.0 partout — pas de
+     boucle de feedback §7 branchée, `recalibrateWeights()` existe et est testée dans le
+     moteur mais aucun questionnaire post-sortie n'est câblé dans l'app)
+  Build de prod OK. `headOffset_cm` reste un stub à 0 (voir tâche 4 ci-dessous — c'est un
+  choix de scope assumé, pas un oubli).
+- `src/components/PostureCaptureFlow.jsx` : accepte maintenant une prop `initialMode` — si
+  fournie, saute l'écran de choix et démarre direct la caméra pour ce mode (c'est comme ça
+  qu'`App.jsx` pilote la séquence ASLR → vidéo profil → photo frontale sans passer par le
+  menu). `MODES` (ex-`CHECKLISTS`) a un 3ᵉ mode `aslr_test`, vidéo comme `profile_video`
+  (`VIDEO_MODES` regroupe les deux pour la logique d'enregistrement vs photo). Exécuté dans
+  un vrai Chromium (Playwright headless, `--use-fake-device-for-media-stream`) jusqu'à
+  l'écran d'étalonnage inclus ET jusqu'au flux ASLR complet (checklist → enregistrement →
+  Valider → écran de chargement → erreur réseau connue → Réessayer → retour à l'ASLR),
+  sans erreur JS. Bug réel trouvé et corrigé au passage : une apostrophe échappée (`’`)
+  écrite en texte JSX brut (pas dans une string JS) s'affichait littéralement au lieu du
+  caractère — seule l'ancienne ligne 232 était concernée. `onCaptured` est le point
+  d'intégration avec `App.jsx` (plus d'écran "done" interne).
 
 ## Limite d'environnement rencontrée (diagnostiquée en détail, pas un bug applicatif)
 
@@ -56,35 +74,51 @@ ci-dessous, toujours ouverte pour cette raison précise).
 
 ## Tâches, par priorité
 
-### 1. Smoke-test réel des modèles MediaPipe sur un vrai appareil (bloquant pour la pFSA et les angles)
-- Le code est câblé (`segmentation-integration.ts`, `pose-integration.ts`, `mediapipe-vision.ts`,
-  `App.jsx`) et le build de prod passe. Reste à vérifier, **hors de ce sandbox** :
+### 1. Smoke-test réel des modèles MediaPipe sur un vrai appareil (bloquant pour tout le reste)
+- Le code est câblé de bout en bout (ASLR → profil → essais → résultats) et le build de prod
+  passe. Reste à vérifier, **hors de ce sandbox** :
   - `ImageSegmenter.segment()` sur une vraie photo de vélo → `computePFSA_cm2()` tombe dans un
     ordre de grandeur plausible (position aéro adulte ≈ 3000-4500 cm², cf. spec) — pas juste
     "ça ne crash pas"
   - `PoseLandmarker.detectForVideo()` sur une vraie vidéo profil → `extractTrialAngles()` produit
     des angles hanche/genou/cheville dans une plage plausible
+  - `PoseLandmarker.detectForVideo()` sur une vraie vidéo ASLR (personne allongée, vue sagittale)
+    → `extractAslrAngle()` produit un angle plausible. Point d'incertitude spécifique : le
+    modèle Pose est conçu/entraîné surtout sur des sujets debout — sa fiabilité allongé n'est
+    pas garantie, à vérifier en priorité (si les landmarks hanche/genou/cheville sont dégradés,
+    le point d'arrêt peut être mal détecté)
   - Le fetch du modèle `.tflite`/`.task` depuis `storage.googleapis.com` aboutit bien (c'est le
     point précis bloqué dans ce sandbox, cf. ci-dessus)
 
 ### 2. Tester `PostureCaptureFlow.jsx` + `App.jsx` sur téléphone réel
-- Fait dans ce sandbox : flux caméra simulée (Chromium headless) jusqu'à l'étalonnage, sans
-  erreur JS. Reste à vérifier sur téléphone : permission caméra réelle, enregistrement vidéo,
-  précision du mapping taps de calibration écran → canvas
+- Fait dans ce sandbox : flux caméra simulée (Chromium headless) jusqu'à l'étalonnage (photo
+  frontale) et jusqu'au bouton Valider + écran de chargement (ASLR), sans erreur JS. Reste à
+  vérifier sur téléphone : permission caméra réelle, enregistrement vidéo, précision du mapping
+  taps de calibration écran → canvas, ergonomie de la séquence à 3 captures (ASLR + vidéo + photo)
+  bout en bout sans perdre l'utilisateur en route
 - **Point d'incertitude explicite, non résolu** : le niveau/tilt (`DeviceOrientationEvent`) peut
   nécessiter `DeviceOrientationEvent.requestPermission()` sur iOS 13+ (non géré — dégradation
   silencieuse plutôt que crash si l'event n'arrive jamais)
 
-### 3. Brancher `posture-aero-engine.ts` sur des essais réels
-- `App.jsx` affiche aujourd'hui les métriques brutes d'UN essai (angles OU pFSA). Il manque :
-  stocker plusieurs essais, saisir le profil athlète (dont `hip_flexibility_score` via test ASLR,
-  cf. spec §3.1), puis appeler `validate`/score/Pareto sur l'ensemble — pas commencé
-
-### 4. Décision à prendre : MediaPipe Hands pour le poignet
+### 3. Décision à prendre : MediaPipe Hands pour le poignet
 Non câblé (cf. `capture-processing.ts`, en-tête de fichier). Avant d'investir dessus : le spec
 (§10) note qu'aucune source bike-fit chiffrée ne justifie un seuil de déviation ulnaire précis
 — évaluer si l'effort d'intégration d'un second modèle se justifie pour un paramètre déjà
 marqué "non sourcé", ou s'il vaut mieux le laisser en warning qualitatif.
+
+### 4. Calculer `headOffset_cm` au lieu du stub à 0
+Dérivable de la photo frontale déjà capturée pour la pFSA : lancer un `PoseLandmarker` en mode
+`IMAGE` (instance séparée de celui en mode `VIDEO` utilisé pour la vidéo profil — MediaPipe ne
+permet pas de mélanger les modes sur une même instance) dessus, comparer la position verticale
+du nez (landmark 0) à la ligne des épaules (11/12), convertir en cm avec la même calibration
+(`cmPerPixel`) que la pFSA. Non fait par choix de scope (~10% du score aéro seulement, cf. §5
+du spec — "signal correctif"), pas par oubli.
+
+### 5. Boucle de feedback post-sortie (§7 du spec)
+`recalibrateWeights()` existe et est testée dans le moteur, mais rien ne l'appelle : pas de
+questionnaire post-sortie dans l'app, poids neutres (1.0) utilisés partout. Nécessite de
+persister les essais/scores d'une session à l'autre (rien n'est sauvegardé aujourd'hui — tout
+vit en state React, perdu au reload) avant que ça ait du sens.
 
 ### Hors scope V1 (ne pas commencer sans arbitrage explicite)
 - Module position guidon (réutilise ce pipeline, plages différentes, cf. spec §10)
