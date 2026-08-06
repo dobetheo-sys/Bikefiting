@@ -290,16 +290,20 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                   />
                   {/* Indicateur de niveau (best-effort, se cache si le capteur n'est pas dispo) */}
                   {displayedTilt !== null && (
-                    <button
-                      onClick={calibrateLevel}
-                      className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/50 pointer-events-auto focus:outline-none focus:ring-2 focus:ring-amber-400"
-                      style={{ fontFamily: 'ui-monospace, monospace' }}
-                      aria-label="Calibrer le niveau sur la position actuelle"
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full ${isLevelOk ? 'bg-cyan-400' : 'bg-red-400'}`} />
-                      <span className="text-[11px] text-neutral-200">{isLevelOk ? 'niveau ok' : `inclinaison ${displayedTilt.toFixed(0)}°`}</span>
-                      <Crosshair className="w-3 h-3 text-neutral-400" />
-                    </button>
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-auto">
+                      <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/50" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${isLevelOk ? 'bg-cyan-400' : 'bg-red-400'}`} />
+                        <span className="text-[11px] text-neutral-200">{isLevelOk ? 'niveau ok' : `inclinaison ${displayedTilt.toFixed(0)}°`}</span>
+                      </div>
+                      <button
+                        onClick={calibrateLevel}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400 text-neutral-950 text-xs font-medium shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-200"
+                        aria-label="Calibrer le niveau : tiens le téléphone bien droit puis touche ce bouton"
+                      >
+                        <Crosshair className="w-3.5 h-3.5" />
+                        Caler le niveau ici
+                      </button>
+                    </div>
                   )}
                 </div>
 
