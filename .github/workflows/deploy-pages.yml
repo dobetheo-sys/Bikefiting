@@ -1,3 +1,13 @@
+# Site : https://dobetheo-sys.github.io/Bikefiting/
+#
+# Publie sur la branche gh-pages (méthode "classique", un simple git push) plutôt
+# que via l'API "GitHub Pages Deployments" (actions/deploy-pages) : cette dernière
+# est restée bloquée en "in progress" pendant plus de 20 minutes lors de la mise en
+# place initiale (déploiement fantôme créé avant l'activation de Pages, jamais
+# nettoyé côté plateforme). Cette méthode ne dépend pas de cette API.
+#
+# Réglage requis une seule fois côté GitHub : Settings > Pages > Build and
+# deployment > Source = "Deploy from a branch", branche gh-pages.
 name: Deploy to GitHub Pages
 
 on:
@@ -6,16 +16,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
+  contents: write
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,17 +30,7 @@ jobs:
       - run: npm run build
         env:
           GITHUB_PAGES: 'true'
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: peaceiris/actions-gh-pages@v3
         with:
-          path: ./dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
