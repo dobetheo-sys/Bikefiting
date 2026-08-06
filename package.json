@@ -1,0 +1,21 @@
+{
+  "name": "posture-aero",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Moteur d'analyse posturale aéro pour cyclisme/triathlon (position prolongateurs) — projet parallèle à EnduraBuild",
+  "scripts": {
+    "test": "tsx --test src/engine/*.test.ts src/capture/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0",
+    "tsx": "^4.21.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0"
+  },
+  "dependencies": {
+    "react": "^18.3.0",
+    "lucide-react": "^0.383.0"
+  }
+}
