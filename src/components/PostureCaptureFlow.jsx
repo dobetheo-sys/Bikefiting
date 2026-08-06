@@ -6,14 +6,16 @@ import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, Ch
 //   A. vidéo profil (angles articulaires)
 //   B. photo frontale + étalonnage par 2 taps (pFSA)
 //
-// Ce composant s'arrête à la capture + étalonnage : il ne lance PAS de pose estimation
-// ni de segmentation ici (ça vit dans capture-processing.ts / segmentation-integration.ts,
-// pas exécutable dans ce rendu artifact). L'écran final affiche ce qui serait transmis
-// au moteur, pas un résultat d'analyse.
+// Ce composant s'arrête à la capture + étalonnage : il appelle `onCaptured({ mode, blob,
+// meta, calibration })` puis rend la main à l'appelant. L'inférence (pose estimation,
+// segmentation) vit dans App.jsx, qui orchestre capture-processing.ts et
+// segmentation-integration.ts/pose-integration.ts — pas dans ce composant, pour garder
+// la capture UI indépendante du pipeline ML.
 //
-// Non garanti dans ce contexte d'aperçu : l'accès caméra dépend des permissions de
-// l'iframe d'artifact — s'il ne fonctionne pas ici, le même code fonctionnera intégré
-// directement au domaine de l'app (contexte sécurisé standard, pas de restriction d'iframe).
+// Point d'incertitude non résolu (cf. HANDOFF_CLAUDE_CODE.md, tâche 2) : le niveau/tilt
+// (DeviceOrientationEvent) peut nécessiter DeviceOrientationEvent.requestPermission() sur
+// iOS 13+, non géré ici — dégradation silencieuse (pas d'indicateur) plutôt que crash si
+// l'event n'arrive jamais sur ces appareils.
 
 const CHECKLISTS = {
   profile_video: [
@@ -36,8 +38,8 @@ function formatElapsed(ms) {
   return `${String(s).padStart(2, '0')}.${cs}s`;
 }
 
-export default function PostureCaptureFlow() {
-  const [screen, setScreen] = useState('intro'); // intro | camera | review | calibrate | done
+export default function PostureCaptureFlow({ onCaptured }) {
+  const [screen, setScreen] = useState('intro'); // intro | camera | review | calibrate
   const [mode, setMode] = useState(null);
   const [error, setError] = useState(null);
   const [recording, setRecording] = useState(false);
@@ -56,6 +58,7 @@ export default function PostureCaptureFlow() {
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
   const startedAtRef = useRef(0);
+  const capturedBlobRef = useRef(null);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -111,6 +114,7 @@ export default function PostureCaptureFlow() {
     mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
     mr.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: mimeType });
+      capturedBlobRef.current = blob;
       setCapturedUrl(URL.createObjectURL(blob));
       setCapturedMeta({ type: 'video', sizeKb: Math.round(blob.size / 1024), durationMs: elapsedMs });
       setScreen('review');
@@ -137,6 +141,7 @@ export default function PostureCaptureFlow() {
     canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
     canvas.toBlob((blob) => {
+      capturedBlobRef.current = blob;
       setCapturedUrl(URL.createObjectURL(blob));
       setCapturedMeta({ type: 'photo', sizeKb: Math.round(blob.size / 1024), width: canvas.width, height: canvas.height });
       setTaps([]);
@@ -164,7 +169,12 @@ export default function PostureCaptureFlow() {
 
   const finish = () => {
     stopStream();
-    setScreen('done');
+    onCaptured?.({
+      mode,
+      blob: capturedBlobRef.current,
+      meta: capturedMeta,
+      calibration: pixelLength ? { pixelLength, realLengthCm: Number(refLengthCm) } : null,
+    });
   };
 
   const startOver = () => {
@@ -219,7 +229,7 @@ export default function PostureCaptureFlow() {
           </button>
 
           <p className="text-neutral-500 text-xs mt-8 leading-relaxed">
-            L\u2019étalonnage de la photo frontale se fait par 2 points touchés directement sur l\u2019image, pas de repère automatique en V1.
+            L’étalonnage de la photo frontale se fait par 2 points touchés directement sur l’image, pas de repère automatique en V1.
           </p>
         </div>
       )}
@@ -406,37 +416,6 @@ export default function PostureCaptureFlow() {
         </div>
       )}
 
-      {screen === 'done' && (
-        <div className="flex-1 flex flex-col justify-center px-6 py-10 max-w-md mx-auto w-full">
-          <div className="text-xs tracking-widest text-cyan-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Essai prêt
-          </div>
-          <h1 className="text-xl font-semibold mb-4">Capture enregistrée</h1>
-
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 mb-6" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            <pre className="text-xs text-neutral-300 whitespace-pre-wrap leading-relaxed">
-{JSON.stringify(
-  {
-    mode,
-    ...(capturedMeta || {}),
-    calibration: pixelLength ? { pixelLength: Math.round(pixelLength), realLengthCm: Number(refLengthCm) } : undefined,
-  },
-  null,
-  2
-)}
-            </pre>
-          </div>
-
-          <p className="text-neutral-500 text-xs mb-6 leading-relaxed">
-            Cette capture correspond à l'entrée attendue par le moteur (posture-aero-engine.ts) une fois passée par
-            l'extraction d'angles / pFSA — non exécutée dans cet aperçu.
-          </p>
-
-          <button onClick={startOver} className="py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
-            Nouvel essai
-          </button>
-        </div>
-      )}
     </div>
   );
 }

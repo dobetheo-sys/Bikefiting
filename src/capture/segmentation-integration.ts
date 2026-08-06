@@ -2,16 +2,20 @@
 // Intégration MediaPipe ImageSegmenter (Web) pour produire le BinaryMask
 // attendu par computePFSA_cm2() (capture-processing.ts).
 //
-// HONNÊTETÉ SUR CE QUI EST VÉRIFIÉ ICI vs PAS :
-// - L'API d'init (FilesetResolver, ImageSegmenter.createFromOptions, .segment())
-//   est confirmée contre la doc officielle actuelle (Google AI Edge, consultée
-//   le 06/08/2026) — donc correcte au niveau de la forme.
-// - CE QUI N'EST PAS TESTÉ : cet environnement n'a ni navigateur ni accès réseau
-//   pour télécharger le WASM/modèle .tflite. Impossible d'exécuter un vrai
-//   segment() ici. La fonction createBikeFitSegmenter() est donc du code
-//   "documenté mais pas exécuté" — à smoke-tester en vrai avant de la considérer fiable.
-// - CE QUI EST TESTÉ (voir demo() en bas) : la logique de filtrage par classe
-//   (toBikeFitBinaryMask), qui est pure et ne dépend d'aucun modèle réel.
+// ÉTAT (mis à jour lors du branchement réel, cf. mediapipe-vision.ts) :
+// - createBikeFitSegmenter() importe directement @mediapipe/tasks-vision et est
+//   appelée pour de vrai par src/App.jsx (mode photo frontale). Le fileset WASM
+//   est injecté par l'appelant (getVisionFileset() dans mediapipe-vision.ts) —
+//   ce fichier reste sans dépendance sur *comment* le fileset est construit, donc
+//   testable en isolant juste readCategoryIndices()/toBikeFitBinaryMask.
+// - CE QUI RESTE À VÉRIFIER SUR UN VRAI APPAREIL : qu'une vraie photo (cycliste +
+//   vélo) produit un masque dont la pFSA calculée tombe dans l'ordre de grandeur
+//   attendu (~3000-4500 cm² en position aéro adulte, cf. spec). Pas exécutable
+//   dans ce sandbox (pas de caméra, et le CDN jsdelivr par défaut de MediaPipe est
+//   bloqué par le proxy réseau d'ici — d'où le WASM local plutôt que la doc CDN).
+// - CE QUI EST TESTÉ (segmentation-integration.test.ts) : la logique de filtrage
+//   par classe (toBikeFitBinaryMask), qui est pure et ne dépend d'aucun modèle réel.
+import { ImageSegmenter } from '@mediapipe/tasks-vision';
 
 // ---------- Choix du modèle ----------
 // DeepLabV3 (Pascal VOC, 21 classes) plutôt qu'un "selfie segmenter" pur :
@@ -26,40 +30,30 @@ export const CATEGORY_PERSON = 15;
 
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite';
-const WASM_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm';
 
-// ---------- Types minimaux (le package officiel a ses propres types, plus riches) ----------
+// ---------- Types minimaux ----------
+// Sous-ensemble de l'API réelle de MPMask (vision.d.ts, @mediapipe/tasks-vision 1.0.1) :
+// getAsUint8Array() est l'accesseur confirmé pour un categoryMask (confirmé contre les
+// types du package installé, plus l'hypothèse de départ "readCategoryIndices").
 
 export interface MPCategoryMaskResult {
   width: number;
   height: number;
-  // MediaPipe expose l'accès aux données du masque via une méthode sur l'objet
-  // MPMask (ex. getAsUint8Array() dans les versions récentes). On isole cette
-  // lecture dans une seule fonction pour n'avoir qu'un endroit à corriger si
-  // l'accesseur exact a changé au moment de l'implémentation réelle.
-  readCategoryIndices: () => Uint8Array;
+  getAsUint8Array: () => Uint8Array;
 }
 
 export interface SegmentationResult {
   categoryMask: MPCategoryMaskResult;
 }
 
-// ---------- Initialisation — NON EXÉCUTÉ ICI, forme vérifiée contre la doc uniquement ----------
+// ---------- Initialisation ----------
+// `visionFileset` = résultat de getVisionFileset() (mediapipe-vision.ts), injecté par
+// l'appelant plutôt qu'importé ici, pour que ce fichier n'ait qu'une seule responsabilité
+// (config du segmenteur) et reste facile à isoler en test.
 
-export async function createBikeFitSegmenter(visionFileset: unknown) {
-  // Squelette conforme à la doc officielle Google AI Edge (Image Segmenter, web) :
-  //   const vision = await FilesetResolver.forVisionTasks(WASM_BASE);
-  //   const imageSegmenter = await ImageSegmenter.createFromOptions(vision, {...});
-  // `visionFileset` = le résultat de FilesetResolver.forVisionTasks(), à obtenir
-  // côté app (ce fichier ne dépend pas directement du package pour rester testable
-  // sans lui). Import réel à faire dans l'app :
-  //   import { FilesetResolver, ImageSegmenter } from '@mediapipe/tasks-vision';
-  const { ImageSegmenter } = (globalThis as any).__mediapipeTasksVision__ ?? {};
-  if (!ImageSegmenter) {
-    throw new Error(
-      "createBikeFitSegmenter: package @mediapipe/tasks-vision non injecté — ce chemin n'a pas pu être testé dans ce sandbox (pas de réseau/navigateur)."
-    );
-  }
+export async function createBikeFitSegmenter(
+  visionFileset: Awaited<ReturnType<typeof import('@mediapipe/tasks-vision').FilesetResolver.forVisionTasks>>
+) {
   return ImageSegmenter.createFromOptions(visionFileset, {
     baseOptions: { modelAssetPath: MODEL_URL },
     outputCategoryMask: true,
@@ -74,7 +68,7 @@ import type { BinaryMask } from './capture-processing';
 import { computePFSA_cm2 } from './capture-processing';
 
 export function toBikeFitBinaryMask(result: SegmentationResult): BinaryMask {
-  const indices = result.categoryMask.readCategoryIndices();
+  const indices = result.categoryMask.getAsUint8Array();
   const data = new Uint8Array(indices.length);
   for (let i = 0; i < indices.length; i++) {
     data[i] = indices[i] === CATEGORY_PERSON || indices[i] === CATEGORY_BICYCLE ? 1 : 0;

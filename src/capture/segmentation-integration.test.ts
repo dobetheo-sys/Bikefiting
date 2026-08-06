@@ -16,7 +16,7 @@ function fakeSegmentationResult(): SegmentationResult {
   for (let y = 3; y < 7; y++) for (let x = 2; x < 5; x++) indices[y * width + x] = CATEGORY_PERSON; // 12 px
   for (let y = 5; y < 8; y++) for (let x = 5; x < 9; x++) indices[y * width + x] = CATEGORY_BICYCLE; // 12 px
   indices[0] = 7; // bruit d'une classe non pertinente (ex. voiture en arrière-plan)
-  return { categoryMask: { width, height, readCategoryIndices: () => indices } };
+  return { categoryMask: { width, height, getAsUint8Array: () => indices } };
 }
 
 describe('toBikeFitBinaryMask — filtre uniquement personne + vélo', () => {
