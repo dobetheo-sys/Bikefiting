@@ -99,6 +99,13 @@ ci-dessous, toujours ouverte pour cette raison précise).
 - **Point d'incertitude explicite, non résolu** : le niveau/tilt (`DeviceOrientationEvent`) peut
   nécessiter `DeviceOrientationEvent.requestPermission()` sur iOS 13+ (non géré — dégradation
   silencieuse plutôt que crash si l'event n'arrive jamais)
+- **Retour terrain (appareil réel, 06/08/2026)** : l'indicateur de niveau affichait ~20°
+  téléphone tenu droit — le capteur `gamma` n'est pas calé sur 0° à la verticale sur tous les
+  appareils. Corrigé par un étalonnage manuel : l'indicateur de niveau est maintenant un bouton
+  tappable (`calibrateLevel()` dans `PostureCaptureFlow.jsx`) qui capture la valeur `gamma`
+  courante comme décalage (`tiltOffset`) ; l'affichage et le seuil "niveau ok" utilisent ensuite
+  `tilt - tiltOffset`. Pas de correction automatique par appareil (pas de base de données de
+  calibration par modèle) — l'utilisateur cale le zéro lui-même en tenant le téléphone droit.
 
 ### 3. Décision à prendre : MediaPipe Hands pour le poignet
 Non câblé (cf. `capture-processing.ts`, en-tête de fichier). Avant d'investir dessus : le spec

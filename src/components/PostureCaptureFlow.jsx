@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp, Crosshair } from 'lucide-react';
 
 // posture-capture-flow.jsx
 // Flux de capture réel (caméra du téléphone) pour les deux entrées du pipeline §2 du spec :
@@ -15,7 +15,9 @@ import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, Ch
 // Point d'incertitude non résolu (cf. HANDOFF_CLAUDE_CODE.md, tâche 2) : le niveau/tilt
 // (DeviceOrientationEvent) peut nécessiter DeviceOrientationEvent.requestPermission() sur
 // iOS 13+, non géré ici — dégradation silencieuse (pas d'indicateur) plutôt que crash si
-// l'event n'arrive jamais sur ces appareils.
+// l'event n'arrive jamais sur ces appareils. Le capteur n'étant pas forcément calé sur 0°
+// à la verticale (retour terrain : ~20° d'écart constaté sur un appareil réel), l'indicateur
+// de niveau est tappable pour caler manuellement un zéro (voir tiltOffset/calibrateLevel).
 
 const MODES = {
   profile_video: {
@@ -67,6 +69,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
   const [taps, setTaps] = useState([]);
   const [refLengthCm, setRefLengthCm] = useState('40');
   const [tilt, setTilt] = useState(null);
+  const [tiltOffset, setTiltOffset] = useState(0);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -210,7 +213,11 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
     setScreen('intro');
   };
 
-  const isLevelOk = tilt === null || Math.abs(tilt) < 4;
+  // Le capteur d'inclinaison n'est pas forcément calé sur 0 quand le téléphone est vertical
+  // (ça varie d'un appareil à l'autre) — d'où le décalage manuel réglé via calibrateLevel().
+  const displayedTilt = tilt === null ? null : tilt - tiltOffset;
+  const isLevelOk = displayedTilt === null || Math.abs(displayedTilt) < 4;
+  const calibrateLevel = () => { if (tilt !== null) setTiltOffset(tilt); };
 
   return (
     <div className="w-full h-full min-h-screen bg-neutral-950 text-neutral-100 flex flex-col" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -282,11 +289,17 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                     style={{ borderColor: 'rgba(232,230,225,0.35)', transform: 'translate(-50%,-50%)' }}
                   />
                   {/* Indicateur de niveau (best-effort, se cache si le capteur n'est pas dispo) */}
-                  {tilt !== null && (
-                    <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/50" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                  {displayedTilt !== null && (
+                    <button
+                      onClick={calibrateLevel}
+                      className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/50 pointer-events-auto focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      style={{ fontFamily: 'ui-monospace, monospace' }}
+                      aria-label="Calibrer le niveau sur la position actuelle"
+                    >
                       <div className={`w-1.5 h-1.5 rounded-full ${isLevelOk ? 'bg-cyan-400' : 'bg-red-400'}`} />
-                      <span className="text-[11px] text-neutral-200">{isLevelOk ? 'niveau ok' : `inclinaison ${tilt.toFixed(0)}°`}</span>
-                    </div>
+                      <span className="text-[11px] text-neutral-200">{isLevelOk ? 'niveau ok' : `inclinaison ${displayedTilt.toFixed(0)}°`}</span>
+                      <Crosshair className="w-3 h-3 text-neutral-400" />
+                    </button>
                   )}
                 </div>
 
