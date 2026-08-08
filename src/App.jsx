@@ -38,7 +38,11 @@ function loadPersistedSession() {
 function initialStageFor(saved) {
   if (!saved) return 'aslr-capture';
   if ((saved.trials && saved.trials.length > 0) || saved.profile) return 'session';
-  if (saved.aslrAngle != null) return 'profile-form';
+  // Ne PAS reprendre sur 'profile-form' juste parce qu'un aslrAngle est sauvegardé : ça
+  // pouvait coincer l'utilisateur sur un vieux résultat (parfois faux, avant un correctif)
+  // sans aucun moyen de refaire le test tant que "Continuer" n'avait pas été cliqué — retour
+  // terrain (08/08/2026), un même "0°" obsolète réapparaissait à chaque réouverture. Refaire
+  // le test ASLR est rapide ; rester coincé sur un résultat périmé est pire.
   return 'aslr-capture';
 }
 
@@ -167,7 +171,7 @@ function NumberField({ label, value, onChange, suffix, required }) {
   );
 }
 
-function ProfileForm({ aslrAngle, aslrTrace, onSubmit }) {
+function ProfileForm({ aslrAngle, aslrTrace, onSubmit, onRetakeAslr }) {
   const [heightCm, setHeightCm] = useState('178');
   const [raceDurationHours, setRaceDurationHours] = useState('2.5');
   const flexScore = aslrToFlexScore(aslrAngle);
@@ -208,6 +212,13 @@ function ProfileForm({ aslrAngle, aslrTrace, onSubmit }) {
           className="py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan-200 flex items-center justify-center gap-2"
         >
           Continuer <ArrowRight className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={onRetakeAslr}
+          className="mt-4 flex items-center justify-center gap-2 py-2 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded"
+        >
+          <RotateCcw className="w-3.5 h-3.5" /> Refaire le test de souplesse
         </button>
       </div>
     </Shell>
@@ -454,6 +465,12 @@ export default function App() {
     setStage('session');
   }, [aslrAngle]);
 
+  const retakeAslr = useCallback(() => {
+    setAslrAngle(null);
+    setAslrTrace(null);
+    setStage('aslr-capture');
+  }, []);
+
   const startNewTrial = useCallback(() => {
     setPendingTrial(null);
     setCaptureKey((k) => k + 1);
@@ -526,7 +543,7 @@ export default function App() {
     case 'aslr-capture':
       return <PostureCaptureFlow key="aslr" initialMode="aslr_test" onCaptured={handleAslrCaptured} />;
     case 'profile-form':
-      return <ProfileForm aslrAngle={aslrAngle} aslrTrace={aslrTrace} onSubmit={handleProfileSubmit} />;
+      return <ProfileForm aslrAngle={aslrAngle} aslrTrace={aslrTrace} onSubmit={handleProfileSubmit} onRetakeAslr={retakeAslr} />;
     case 'trial-video':
       return <PostureCaptureFlow key={`tv-${captureKey}`} initialMode="profile_video" onCaptured={handleTrialVideoCaptured} />;
     case 'trial-photo':
