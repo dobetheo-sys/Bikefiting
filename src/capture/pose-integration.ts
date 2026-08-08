@@ -14,8 +14,16 @@
 import { PoseLandmarker } from '@mediapipe/tasks-vision';
 import type { Landmark, PoseFrame } from './capture-processing';
 
+// Retour terrain (08/08/2026) : sur une vraie vidéo ASLR (allongé, caméra au sol très
+// proche), le modèle "lite" ne détectait une pose sur QUE 14/40 frames échantillonnées, et
+// une seule d'entre elles avait un genou droit détecté — pas assez pour mesurer quoi que ce
+// soit de fiable, indépendamment de la logique de extractAslrAngle (déjà durcie par
+// ailleurs). Passage à "full" (9.4 Mo contre 5.8 Mo pour "lite" — pas "heavy", 30.7 Mo,
+// trop lourd vu les connexions lentes observées) : meilleure précision de détection,
+// coût raisonnable vu que le modèle est mis en cache par le navigateur après le premier
+// chargement (cache-control: max-age=3600 côté storage.googleapis.com).
 const MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task';
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task';
 
 export async function createBikeFitPoseLandmarker(
   visionFileset: Awaited<ReturnType<typeof import('@mediapipe/tasks-vision').FilesetResolver.forVisionTasks>>

@@ -23,8 +23,9 @@ scores + sélection Pareto). Ce qui reste demande un vrai appareil pour être te
   confirmé contre `vision.d.ts` du package installé — pas `readCategoryIndices()` comme supposé
   au premier jet). N'a **jamais tourné contre un vrai modèle** — voir "Limite d'environnement".
 - `src/capture/pose-integration.ts` (nouveau) : `createBikeFitPoseLandmarker()` réel
-  (`PoseLandmarker`, mode `VIDEO`, modèle `pose_landmarker_lite`). `toPoseFrame()` (conversion
-  pure) testée. Jamais tourné contre une vraie vidéo — même blocage.
+  (`PoseLandmarker`, mode `VIDEO`, modèle `pose_landmarker_full` — passé de `lite` à `full`
+  le 08/08/2026, cf. section dédiée plus bas : `lite` ne détectait quasi aucune pose
+  exploitable sur une vraie vidéo ASLR difficile). `toPoseFrame()` (conversion pure) testée.
 - `src/capture/capture-processing.ts` (`extractAslrAngle`, nouveau) : angle cuisse/horizontale
   au point d'arrêt (dernier instant où le genou reste verrouillé, seuil 165° sur l'angle
   hanche-genou-cheville). Testé avec des coordonnées construites à la main (pas juste
@@ -167,6 +168,30 @@ mesure comme prévu. Test de non-régression ajouté (`capture-processing.test.t
 reproduit exactement ce scénario. Point de vigilance : le seuil de 15° est un choix
 d'ingénierie raisonné (cf. commentaire dans le code) mais pas sourcé cliniquement — à
 surveiller si des faux positifs d'armement apparaissent sur d'autres vidéos réelles.
+
+### Bug réel #3 diagnostiqué et corrigé (08/08/2026, même session) : détection de pose trop faible sur ce fichier
+Après les correctifs #1 et #2, le même fichier réel redonnait encore 18,9°, identique à
+avant. Diagnostic à distance impossible dans ce sandbox (PoseLandmarker ne peut pas y
+tourner, cf. limite d'environnement — le proxy du sandbox bloque ECH/GREASE-ECH côté
+Chromium alors que `curl` passe, donc même une reproduction Playwright échoue en
+"Failed to fetch"/`ERR_CONNECTION_RESET` sur le fetch du modèle). Solution : exposer un
+diagnostic *à l'écran* (`extractAslrAngleTrace()`, affiché en petit sous le score ASLR
+dans `App.jsx`) pour que l'utilisateur puisse capturer les vrais chiffres depuis son
+téléphone (où le modèle charge normalement) et me les renvoyer en capture d'écran.
+Résultat obtenu : **1 seule frame sur 14 valides avait un genou droit détecté** (et 14/40
+échantillons seulement avaient une pose détectée du tout) — le modèle `pose_landmarker_lite`
+ne détecte quasiment aucune pose exploitable sur cette vidéo (allongé, caméra au sol très
+proche, cf. incertitude déjà notée tâche 1 : "le modèle Pose... sa fiabilité allongé n'est
+pas garantie"). Ce n'était donc plus un bug de logique dans `extractAslrAngle` (les
+correctifs #1/#2 restent corrects et nécessaires) mais un problème de **qualité de
+détection en amont**. Corrigé en passant du modèle `lite` (5.8 Mo) à `full` (9.4 Mo) dans
+`pose-integration.ts` — meilleure précision de détection, coût de téléchargement raisonnable
+(mis en cache après le premier chargement). **Non encore reconfirmé sur un vrai appareil**
+au moment d'écrire ceci — à vérifier avec le diagnostic à l'écran sur le prochain test.
+Si `full` ne suffit toujours pas, `heavy` (30.7 Mo) existe mais son poids est probablement
+rédhibitoire vu les connexions lentes observées (quelques Ko/s par moments) — à ne
+considérer qu'en dernier recours, et peut-être avec un message d'attente explicite sur le
+temps de téléchargement.
 
 ### Hors scope V1 (ne pas commencer sans arbitrage explicite)
 - Module position guidon (réutilise ce pipeline, plages différentes, cf. spec §10)
