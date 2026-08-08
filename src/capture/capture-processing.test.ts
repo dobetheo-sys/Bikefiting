@@ -118,6 +118,35 @@ function synthAslrFrames(): PoseFrame[] {
   return frames;
 }
 
+/**
+ * Reproduit le cas réel du 08/08/2026 : la vidéo commence par une phase d'installation
+ * (utilisateur accroupi pour ajuster le téléphone, genou plié) AVANT que la personne
+ * s'allonge et lève la jambe. Préfixe la séquence propre de `synthAslrFrames()` avec des
+ * frames genou-plié dont la cuisse n'a jamais atteint le seuil d'engagement — ces frames ne
+ * doivent pas déclencher l'arrêt de la mesure.
+ */
+function synthAslrFramesWithSetup(): PoseFrame[] {
+  const hip: Landmark = { x: 0.5, y: 0.5, visibility: 0.95 };
+  const setupFrames: PoseFrame[] = [];
+  let t = -99; // avant les timestamps de synthAslrFrames()
+
+  // Accroupi : genou très plié (angle hanche-genou-cheville bien sous le seuil de 165°),
+  // cuisse quasi verticale — géométrie d'installation, pas du tout la levée testée.
+  const crouchKnee = { x: hip.x + 0.05, y: hip.y - 0.15, visibility: 0.9 };
+  const crouchAnkle = { x: hip.x + 0.02, y: hip.y - 0.02, visibility: 0.85 };
+  for (let i = 0; i < 3; i++) {
+    const landmarks: Landmark[] = new Array(33).fill({ x: 0, y: 0, visibility: 0 });
+    landmarks[IDX.RIGHT_HIP] = hip;
+    landmarks[IDX.LEFT_HIP] = { x: 0, y: 0, visibility: 0 };
+    landmarks[IDX.RIGHT_KNEE] = crouchKnee;
+    landmarks[IDX.RIGHT_ANKLE] = crouchAnkle;
+    setupFrames.push({ landmarks, timestampMs: t });
+    t += 33;
+  }
+
+  return [...setupFrames, ...synthAslrFrames()];
+}
+
 describe('extractAslrAngle — §3.1 du spec, point d\'arrêt = genou qui plie', () => {
   test('reprend le max de la cuisse tant que le genou reste verrouillé (75°, pas 85°)', () => {
     assert.equal(extractAslrAngle(synthAslrFrames()), 75);
@@ -125,6 +154,10 @@ describe('extractAslrAngle — §3.1 du spec, point d\'arrêt = genou qui plie',
 
   test('lève une erreur explicite si aucune frame fournie', () => {
     assert.throws(() => extractAslrAngle([]), /aucune frame/);
+  });
+
+  test('ignore un genou plié pendant l\'installation, avant que la levée ne commence (retour terrain 08/08/2026)', () => {
+    assert.equal(extractAslrAngle(synthAslrFramesWithSetup()), 75);
   });
 });
 

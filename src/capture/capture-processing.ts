@@ -126,6 +126,22 @@ export function extractTrialAngles(frames: PoseFrame[]): TrialAngles {
 
 const KNEE_STRAIGHT_THRESHOLD = 165; // sous ce seuil, le genou est considéré en train de plier -> fin de mesure
 
+// Sous ce seuil de cuisse, on considère qu'on est encore en position de repos/installation
+// (avant que la levée n'ait vraiment commencé), pas dans le mouvement testé lui-même.
+//
+// Bug réel trouvé sur une vraie vidéo ASLR (retour terrain, 08/08/2026) : la vidéo contient
+// naturellement une phase d'installation au tout début (l'utilisateur s'accroupit pour
+// ajuster le téléphone avant de s'allonger — genou plié) AVANT le mouvement testé. L'ancienne
+// logique arrêtait la mesure (`break`) dès le premier genou plié rencontré, y compris pendant
+// cette installation — donnant un angle proche de 0 ou très sous-estimé alors que la vraie
+// levée, filmée juste après, atteignait ~85° (vérifié en rejouant la vidéo réelle image par
+// image). Le seuil d'"engagement" ci-dessous retarde l'armement de la règle d'arrêt jusqu'à
+// ce que la cuisse soit réellement levée — les genoux pliés AVANT ce point (installation)
+// sont ignorés plutôt que fatals ; ceux APRÈS (le vrai point d'arrêt clinique du test)
+// arrêtent toujours la mesure comme prévu (cf. test "un angle plus élevé après que le genou
+// ait plié n'est pas retenu").
+const RAISE_ENGAGED_THRESHOLD_DEG = 15;
+
 export function extractAslrAngle(frames: PoseFrame[]): number {
   if (frames.length === 0) throw new Error('extractAslrAngle: aucune frame fournie');
   const side = pickSide(frames);
@@ -135,12 +151,19 @@ export function extractAslrAngle(frames: PoseFrame[]): number {
       : { HIP: IDX.LEFT_HIP, KNEE: IDX.LEFT_KNEE, ANKLE: IDX.LEFT_ANKLE };
 
   let maxThighAngle = 0;
+  let raiseEngaged = false;
   for (const f of frames) {
     const lm = f.landmarks;
     const kneeAngle = angleAt(lm[S.HIP], lm[S.KNEE], lm[S.ANKLE]);
-    if (Number.isNaN(kneeAngle) || kneeAngle < KNEE_STRAIGHT_THRESHOLD) break; // genou qui plie -> fin de la mesure valide
+    if (Number.isNaN(kneeAngle) || kneeAngle < KNEE_STRAIGHT_THRESHOLD) {
+      if (raiseEngaged) break; // genou qui plie après le début de la levée -> fin de la mesure valide
+      continue; // genou plié avant que la levée commence (installation) -> ignoré
+    }
     const thighAngle = angleVsHorizontal(lm[S.HIP], lm[S.KNEE]);
-    if (!Number.isNaN(thighAngle)) maxThighAngle = Math.max(maxThighAngle, thighAngle);
+    if (!Number.isNaN(thighAngle)) {
+      maxThighAngle = Math.max(maxThighAngle, thighAngle);
+      if (thighAngle >= RAISE_ENGAGED_THRESHOLD_DEG) raiseEngaged = true;
+    }
   }
   return r1(maxThighAngle);
 }

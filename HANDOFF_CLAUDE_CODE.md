@@ -152,6 +152,22 @@ contre 40/40 bloquées à 0.00s avant). Repli sur l'ancien seek si l'API n'est p
 supportée par le navigateur (mieux que rien). **Ce bug touchait potentiellement aussi les
 vidéos essai (profil)**, même mécanisme de sampling — pas juste l'ASLR.
 
+### Bug réel #2 trouvé et corrigé (08/08/2026, même session) : angle ASLR sous-estimé (18,9°)
+Une fois le bug #1 corrigé, le même fichier réel donnait 18,9° au lieu des ~85° visibles à
+l'œil sur la vidéo (jambe clairement levée quasi à la verticale, cf. capture d'écran de la
+frame du pic). Cause distincte : `extractAslrAngle` arrêtait la mesure (`break`) dès le
+**tout premier** genou plié rencontré dans l'ordre chronologique des frames — or la vidéo
+réelle commence par une phase d'installation (l'utilisateur s'accroupit pour ajuster le
+téléphone avant de s'allonger, genou plié) **avant** le mouvement testé. Le seek cassé du
+bug #1 masquait ce second bug (tout retombait sur la frame 0, avant même l'installation).
+Corrigé en n'armant la règle d'arrêt qu'une fois la cuisse réellement engagée dans la levée
+(seuil `RAISE_ENGAGED_THRESHOLD_DEG = 15°`, genou plié) — les genoux pliés avant ce point
+(installation) sont ignorés, ceux après (vrai point d'arrêt clinique) arrêtent toujours la
+mesure comme prévu. Test de non-régression ajouté (`capture-processing.test.ts`) qui
+reproduit exactement ce scénario. Point de vigilance : le seuil de 15° est un choix
+d'ingénierie raisonné (cf. commentaire dans le code) mais pas sourcé cliniquement — à
+surveiller si des faux positifs d'armement apparaissent sur d'autres vidéos réelles.
+
 ### Hors scope V1 (ne pas commencer sans arbitrage explicite)
 - Module position guidon (réutilise ce pipeline, plages différentes, cf. spec §10)
 - Vue frontale dynamique (vidéo plutôt que photo statique)
