@@ -12,6 +12,10 @@ import {
   ShieldCheck,
   Timer,
   CheckCircle2,
+  Video,
+  Camera,
+  ChevronRight,
+  Circle,
 } from 'lucide-react';
 import PostureCaptureFlow from './components/PostureCaptureFlow.jsx';
 import { getVisionFileset } from './capture/mediapipe-vision';
@@ -409,16 +413,105 @@ function SessionScreen({ profile, trials, onNewTrial, onAnalyze, onNewSession })
   );
 }
 
-function TrialDeltasForm({ onSubmit }) {
-  const [saddleHeightMm, setSaddleHeightMm] = useState('0');
-  const [reachMm, setReachMm] = useState('0');
-  const [dropMm, setDropMm] = useState('0');
+function TrialStepRow({ icon: Icon, title, consigne, done, summary, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-3 p-4 text-left rounded-lg border border-neutral-800 bg-neutral-900 hover:border-amber-400/50 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors"
+    >
+      {done ? (
+        <CheckCircle2 className="w-5 h-5 text-cyan-400 shrink-0" />
+      ) : (
+        <Circle className="w-5 h-5 text-neutral-700 shrink-0" />
+      )}
+      <Icon className="w-4 h-4 text-neutral-500 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="font-medium text-neutral-100 text-sm">{title}</div>
+        <p className="text-xs text-neutral-500 mt-0.5 truncate">{done ? summary : consigne}</p>
+      </div>
+      <ChevronRight className="w-4 h-4 text-neutral-600 shrink-0" />
+    </button>
+  );
+}
+
+function TrialOverview({ trialNumber, pendingTrial, onOpenVideo, onOpenPhoto, onOpenDeltas, onSave, onCancel }) {
+  const videoDone = Boolean(pendingTrial?.angles);
+  const photoDone = Boolean(pendingTrial?.frontal);
+  const deltasDone = Boolean(pendingTrial?.deltas);
+  const doneCount = [videoDone, photoDone, deltasDone].filter(Boolean).length;
+  const allDone = doneCount === 3;
 
   return (
     <Shell>
       <div className="flex-1 flex flex-col justify-center px-6 py-10 max-w-md mx-auto w-full">
         <div className="text-xs tracking-widest text-amber-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-          Essai capturé
+          Essai {trialNumber}
+        </div>
+        <h1 className="text-xl font-semibold mb-1">3 étapes à compléter</h1>
+        <p className="text-neutral-400 text-sm mb-6" style={{ fontFamily: 'ui-monospace, monospace' }}>
+          {doneCount}/3 complétées
+        </p>
+
+        <div className="space-y-3 mb-8">
+          <TrialStepRow
+            icon={Video}
+            title="Vidéo profil"
+            consigne="Vue de profil sur le vélo, en pédalant"
+            done={videoDone}
+            summary={videoDone ? `hanche ${pendingTrial.angles.hip.mean}° · tronc ${pendingTrial.angles.trunk.mean}°` : ''}
+            onClick={onOpenVideo}
+          />
+          <TrialStepRow
+            icon={Camera}
+            title="Photo frontale"
+            consigne="Vue de face, avec étalonnage"
+            done={photoDone}
+            summary={photoDone ? `pFSA ${pendingTrial.frontal.pFSA_cm2} cm²` : ''}
+            onClick={onOpenPhoto}
+          />
+          <TrialStepRow
+            icon={Ruler}
+            title="Réglages du vélo"
+            consigne="Hauteur de selle / reach / drop"
+            done={deltasDone}
+            summary={
+              deltasDone
+                ? `selle ${pendingTrial.deltas.saddleHeightMm >= 0 ? '+' : ''}${pendingTrial.deltas.saddleHeightMm}mm · reach ${pendingTrial.deltas.reachMm >= 0 ? '+' : ''}${pendingTrial.deltas.reachMm}mm · drop ${pendingTrial.deltas.dropMm >= 0 ? '+' : ''}${pendingTrial.deltas.dropMm}mm`
+                : ''
+            }
+            onClick={onOpenDeltas}
+          />
+        </div>
+
+        <button
+          onClick={onSave}
+          disabled={!allDone}
+          className="py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
+        >
+          Enregistrer cet essai
+        </button>
+
+        <button
+          onClick={onCancel}
+          className="mt-4 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+        >
+          Annuler cet essai
+        </button>
+      </div>
+    </Shell>
+  );
+}
+
+function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
+  const [saddleHeightMm, setSaddleHeightMm] = useState(String(initialDeltas?.saddleHeightMm ?? 0));
+  const [reachMm, setReachMm] = useState(String(initialDeltas?.reachMm ?? 0));
+  const [dropMm, setDropMm] = useState(String(initialDeltas?.dropMm ?? 0));
+
+  return (
+    <Shell>
+      <div className="flex-1 flex flex-col justify-center px-6 py-10 max-w-md mx-auto w-full">
+        <div className="text-xs tracking-widest text-amber-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
+          Réglages du vélo
         </div>
         <h1 className="text-xl font-semibold mb-1">Qu’as-tu changé sur le vélo ?</h1>
         <p className="text-neutral-400 text-sm mb-6">Par rapport à ton réglage de référence (0 si c’est le premier essai).</p>
@@ -435,8 +528,14 @@ function TrialDeltasForm({ onSubmit }) {
           }
           className="py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200"
         >
-          Enregistrer l’essai
+          Valider ces réglages
         </button>
+
+        {onCancel && (
+          <button onClick={onCancel} className="mt-4 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
+            Annuler
+          </button>
+        )}
       </div>
     </Shell>
   );
@@ -602,10 +701,31 @@ export default function App() {
     setStage('aslr-capture');
   }, []);
 
+  // Nouvel essai : un écran unique liste les 3 étapes (vidéo, photo, réglages), chacune
+  // avec son bouton — pas de séquence forcée. On peut les faire dans n'importe quel ordre,
+  // revenir en arrière, et l'essai n'est enregistré qu'une fois les 3 complétées.
   const startNewTrial = useCallback(() => {
-    setPendingTrial(null);
+    setPendingTrial({});
+    setStage('trial-overview');
+  }, []);
+
+  const openTrialVideo = useCallback(() => {
     setCaptureKey((k) => k + 1);
     setStage('trial-video');
+  }, []);
+
+  const openTrialPhoto = useCallback(() => {
+    setCaptureKey((k) => k + 1);
+    setStage('trial-photo');
+  }, []);
+
+  const openTrialDeltas = useCallback(() => setStage('trial-deltas'), []);
+
+  const cancelTrialStep = useCallback(() => setStage('trial-overview'), []);
+
+  const cancelTrial = useCallback(() => {
+    setPendingTrial(null);
+    setStage('session');
   }, []);
 
   const handleTrialVideoCaptured = useCallback(
@@ -615,9 +735,9 @@ export default function App() {
       setBusyProgress(null);
       try {
         const angles = await processProfileVideoTrial(payload.blob, (current, total) => setBusyProgress({ current, total }));
-        setPendingTrial({ angles });
+        setPendingTrial((prev) => ({ ...prev, angles }));
         setBusy(null);
-        setStage('trial-photo');
+        setStage('trial-overview');
       } catch (e) {
         fail(e);
       }
@@ -637,7 +757,7 @@ export default function App() {
           frontal: { pFSA_cm2: pfsaCm2, athleteHeight_cm: athleteHeightCm, headOffset_cm: 0 },
         }));
         setBusy(null);
-        setStage('trial-deltas');
+        setStage('trial-overview');
       } catch (e) {
         fail(e);
       }
@@ -645,17 +765,19 @@ export default function App() {
     [fail, athleteHeightCm]
   );
 
-  const handleTrialDeltasSubmit = useCallback(
-    (deltas) => {
-      setTrials((prev) => [
-        ...prev,
-        { id: `t${prev.length + 1}`, angles: pendingTrial.angles, frontal: pendingTrial.frontal, deltas },
-      ]);
-      setPendingTrial(null);
-      setStage('session');
-    },
-    [pendingTrial]
-  );
+  const handleTrialDeltasSubmit = useCallback((deltas) => {
+    setPendingTrial((prev) => ({ ...prev, deltas }));
+    setStage('trial-overview');
+  }, []);
+
+  const saveTrial = useCallback(() => {
+    setTrials((prev) => [
+      ...prev,
+      { id: `t${prev.length + 1}`, angles: pendingTrial.angles, frontal: pendingTrial.frontal, deltas: pendingTrial.deltas },
+    ]);
+    setPendingTrial(null);
+    setStage('session');
+  }, [pendingTrial]);
 
   const runAnalysis = useCallback(() => {
     setResult(runEngine(trials, profile, NEUTRAL_WEIGHTS));
@@ -664,8 +786,11 @@ export default function App() {
 
   const retryFromError = useCallback(() => {
     setError(null);
-    setStage(profile ? 'session' : 'aslr-capture');
-  }, [profile]);
+    // Un essai en cours (pendingTrial non nul) garde ses étapes déjà complétées — pas la
+    // peine de tout perdre si une seule étape échoue.
+    if (pendingTrial) setStage('trial-overview');
+    else setStage(profile ? 'session' : 'aslr-capture');
+  }, [profile, pendingTrial]);
 
   if (error) return <ErrorScreen message={error} onRetry={retryFromError} />;
   if (busy) return <Busy label={busy} progress={busyProgress} />;
@@ -677,12 +802,38 @@ export default function App() {
       return <PostureCaptureFlow key="aslr" initialMode="aslr_test" onCaptured={handleAslrCaptured} />;
     case 'profile-form':
       return <ProfileForm aslrAngle={aslrAngle} aslrTrace={aslrTrace} onSubmit={handleProfileSubmit} onRetakeAslr={retakeAslr} />;
+    case 'trial-overview':
+      return (
+        <TrialOverview
+          trialNumber={trials.length + 1}
+          pendingTrial={pendingTrial}
+          onOpenVideo={openTrialVideo}
+          onOpenPhoto={openTrialPhoto}
+          onOpenDeltas={openTrialDeltas}
+          onSave={saveTrial}
+          onCancel={cancelTrial}
+        />
+      );
     case 'trial-video':
-      return <PostureCaptureFlow key={`tv-${captureKey}`} initialMode="profile_video" onCaptured={handleTrialVideoCaptured} />;
+      return (
+        <PostureCaptureFlow
+          key={`tv-${captureKey}`}
+          initialMode="profile_video"
+          onCaptured={handleTrialVideoCaptured}
+          onCancel={cancelTrialStep}
+        />
+      );
     case 'trial-photo':
-      return <PostureCaptureFlow key={`tp-${captureKey}`} initialMode="frontal_photo" onCaptured={handleTrialPhotoCaptured} />;
+      return (
+        <PostureCaptureFlow
+          key={`tp-${captureKey}`}
+          initialMode="frontal_photo"
+          onCaptured={handleTrialPhotoCaptured}
+          onCancel={cancelTrialStep}
+        />
+      );
     case 'trial-deltas':
-      return <TrialDeltasForm onSubmit={handleTrialDeltasSubmit} />;
+      return <TrialDeltasForm initialDeltas={pendingTrial?.deltas} onSubmit={handleTrialDeltasSubmit} onCancel={cancelTrialStep} />;
     case 'results':
       return <ResultsScreen result={result} onBack={() => setStage('session')} />;
     case 'session':

@@ -209,6 +209,23 @@ représentatif d'un vrai téléphone (Safari/iOS décode HEVC nativement en mat�
 généralement aussi via le framework média de l'OS) — à confirmer sur un vrai test si un
 utilisateur importe un fichier HEVC.
 
+### Écran "essai" restructuré en checklist (08/08/2026)
+Demande produit explicite (correction d'une première tentative pas alignée) : au lieu
+d'une séquence forcée vidéo → photo → réglages en 3 écrans plein écran successifs, un
+nouvel écran `TrialOverview` (`App.jsx`) liste les 3 étapes d'un essai (vidéo profil, photo
+frontale, réglages du vélo) avec, pour chacune, sa consigne courte, son statut (fait/à
+faire) et un bouton — dans n'importe quel ordre, avec retour possible à tout moment
+(`onCancel`). L'essai n'est ajouté à `trials` qu'une fois les 3 complétées (`saveTrial`),
+via un nouveau stage `trial-overview` qui orchestre `pendingTrial` (objet accumulé
+`{angles, frontal, deltas}` au lieu du flux linéaire précédent). `PostureCaptureFlow.jsx`
+a gagné une prop `onCancel` (lien "Annuler" sur l'écran caméra, import comme live) pour
+permettre ce retour arrière. Le test de souplesse (ASLR) n'est PAS concerné — il reste un
+step unique avant la boucle d'essais, confirmé explicitement par l'utilisateur.
+Vérifié en Chromium headless (Playwright) : navigation checklist ↔ vidéo/photo/réglages
+dans les deux sens, statut 0/3 → 1/3, bouton "Enregistrer" désactivé tant que les 3 ne sont
+pas faites — sans dépendre de MediaPipe (réglages testés en vrai, vidéo/photo testés
+jusqu'à l'écran de saisie/caméra, cf. limite d'environnement habituelle pour l'inférence).
+
 ### Hors scope V1 (ne pas commencer sans arbitrage explicite)
 - Module position guidon (réutilise ce pipeline, plages différentes, cf. spec §10)
 - Vue frontale dynamique (vidéo plutôt que photo statique)

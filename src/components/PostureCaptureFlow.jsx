@@ -93,7 +93,7 @@ function ChecklistPanel({ mode, open, onToggle }) {
   );
 }
 
-export default function PostureCaptureFlow({ onCaptured, initialMode }) {
+export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }) {
   const [screen, setScreen] = useState('intro'); // intro | camera | review | calibrate
   const [mode, setMode] = useState(initialMode ?? null);
   const [error, setError] = useState(null);
@@ -435,6 +435,14 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                 >
                   Filmer directement dans l'appli
                 </button>
+                {onCancel && (
+                  <button
+                    onClick={onCancel}
+                    className="text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+                  >
+                    Annuler
+                  </button>
+                )}
               </div>
             </>
           ) : (
@@ -514,6 +522,14 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                       <input type="file" accept="image/*" className="hidden" onChange={importPhoto} />
                     </label>
                   </>
+                )}
+                {onCancel && !recording && (
+                  <button
+                    onClick={onCancel}
+                    className="text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+                  >
+                    Annuler
+                  </button>
                 )}
               </div>
             </>
