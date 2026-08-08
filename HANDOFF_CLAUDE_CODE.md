@@ -134,6 +134,24 @@ bien lisible par `sampleVideoFrames`/`createImageBitmap` — codecs variables se
 caméra source (HEVC iOS, etc.), pas testé au-delà du principe (fichier généré par
 `MediaRecorder` du navigateur, jamais un vrai fichier caméra native, dans ce sandbox).
 
+### Bug réel trouvé et corrigé (08/08/2026) : angle ASLR à 0° sur vraie vidéo
+Retour terrain : test ASLR donnant systématiquement un angle de 0°. Diagnostiqué en
+rejouant la vraie vidéo (16 s, envoyée par l'utilisateur) dans un vrai Chromium — la
+vidéo elle-même est correcte (personne allongée, jambe levée bien visible), mais
+`video-frame-sampler.ts` échantillonnait par `video.currentTime = t` (seek), qui **ne
+fonctionne pas** sur un webm produit par `MediaRecorder` : `onseeked` se déclenche mais
+`currentTime` reste bloqué à 0 pour les 40/40 échantillons demandés (confirmé en
+reproduisant exactement la boucle du code contre le fichier réel — pas une supposition).
+Cause : ce webm n'a pas d'index Cues/SeekHead, que `MediaRecorder` n'écrit pas. Résultat :
+toutes les frames "analysées" étaient en fait la même frame initiale, avant le mouvement
+→ `extractAslrAngle` ne voyait jamais de genou verrouillé en position haute → renvoyait sa
+valeur par défaut (0). Corrigé en remplaçant le seek par un échantillonnage en lecture
+réelle via `requestVideoFrameCallback` (vraies frames décodées dans l'ordre de lecture,
+confirmé sur ce même fichier : 39 frames avec des temps réels distincts et croissants,
+contre 40/40 bloquées à 0.00s avant). Repli sur l'ancien seek si l'API n'est pas
+supportée par le navigateur (mieux que rien). **Ce bug touchait potentiellement aussi les
+vidéos essai (profil)**, même mécanisme de sampling — pas juste l'ASLR.
+
 ### Hors scope V1 (ne pas commencer sans arbitrage explicite)
 - Module position guidon (réutilise ce pipeline, plages différentes, cf. spec §10)
 - Vue frontale dynamique (vidéo plutôt que photo statique)
