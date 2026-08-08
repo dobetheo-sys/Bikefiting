@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { RotateCcw, Loader2, AlertTriangle, Plus, ArrowRight } from 'lucide-react';
 import PostureCaptureFlow from './components/PostureCaptureFlow.jsx';
 import { getVisionFileset } from './capture/mediapipe-vision';
@@ -19,6 +19,28 @@ import { aslrToFlexScore, runEngine } from './engine/posture-aero-engine';
 const TRIAL_SAMPLE_COUNT = 30; // frames échantillonnées sur la vidéo profil (cycle de pédalage)
 const ASLR_SAMPLE_COUNT = 40; // plus fin : on cherche un point d'arrêt précis (genou qui plie)
 const NEUTRAL_WEIGHTS = { neck: 1, lowerBack: 1, hands: 1, knees: 1 };
+
+// Persistance de session (retour terrain : un plantage du navigateur en pleine capture
+// faisait tout perdre, tout vivait en state React). On ne sauvegarde que les données
+// "acquises" (souplesse, profil, essais déjà validés) — pas les étapes de capture en
+// cours (pendingTrial), qui redémarrent proprement depuis leur écran au rechargement.
+const SESSION_STORAGE_KEY = 'posture-aero-session-v1';
+
+function loadPersistedSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function initialStageFor(saved) {
+  if (!saved) return 'aslr-capture';
+  if ((saved.trials && saved.trials.length > 0) || saved.profile) return 'session';
+  if (saved.aslrAngle != null) return 'profile-form';
+  return 'aslr-capture';
+}
 
 async function samplePoseFramesFromVideo(blob, sampleCount) {
   const fileset = await getVisionFileset();
@@ -164,7 +186,7 @@ function ProfileForm({ aslrAngle, onSubmit }) {
   );
 }
 
-function SessionScreen({ profile, trials, onNewTrial, onAnalyze }) {
+function SessionScreen({ profile, trials, onNewTrial, onAnalyze, onNewSession }) {
   return (
     <Shell>
       <div className="flex-1 flex flex-col justify-center px-6 py-10 max-w-md mx-auto w-full">
@@ -172,8 +194,11 @@ function SessionScreen({ profile, trials, onNewTrial, onAnalyze }) {
           Session
         </div>
         <h1 className="text-xl font-semibold mb-1">Tes essais</h1>
-        <p className="text-neutral-400 text-sm mb-6">
+        <p className="text-neutral-400 text-sm mb-1">
           Souplesse {profile.hipFlexibilityScore}/5 · minimum 3 essais valides pour une frontière Pareto (spec §6).
+        </p>
+        <p className="text-neutral-600 text-xs mb-6">
+          Reprend automatiquement ici si tu quittes ou si le navigateur plante.
         </p>
 
         <div className="rounded-lg border border-neutral-800 bg-neutral-900 divide-y divide-neutral-800 mb-6">
@@ -201,6 +226,13 @@ function SessionScreen({ profile, trials, onNewTrial, onAnalyze }) {
           className="py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
         >
           Voir les résultats
+        </button>
+
+        <button
+          onClick={() => { if (confirm('Effacer cette session et repartir de zéro ?')) onNewSession(); }}
+          className="mt-6 text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+        >
+          Nouvelle session (efface tout)
         </button>
       </div>
     </Shell>
@@ -320,16 +352,41 @@ function ResultsScreen({ result, onBack }) {
 }
 
 export default function App() {
-  const [stage, setStage] = useState('aslr-capture');
-  const [aslrAngle, setAslrAngle] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [athleteHeightCm, setAthleteHeightCm] = useState(null);
-  const [trials, setTrials] = useState([]);
+  const [persisted] = useState(() => loadPersistedSession());
+  const [stage, setStage] = useState(() => initialStageFor(persisted));
+  const [aslrAngle, setAslrAngle] = useState(() => persisted?.aslrAngle ?? null);
+  const [profile, setProfile] = useState(() => persisted?.profile ?? null);
+  const [athleteHeightCm, setAthleteHeightCm] = useState(() => persisted?.athleteHeightCm ?? null);
+  const [trials, setTrials] = useState(() => persisted?.trials ?? []);
   const [pendingTrial, setPendingTrial] = useState(null);
   const [captureKey, setCaptureKey] = useState(0);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ aslrAngle, profile, athleteHeightCm, trials }));
+    } catch {
+      // stockage indisponible (navigation privée, quota) — pas bloquant, juste pas de reprise possible
+    }
+  }, [aslrAngle, profile, athleteHeightCm, trials]);
+
+  const startNewSession = useCallback(() => {
+    try {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch {
+      // ignoré
+    }
+    setAslrAngle(null);
+    setProfile(null);
+    setAthleteHeightCm(null);
+    setTrials([]);
+    setPendingTrial(null);
+    setResult(null);
+    setError(null);
+    setStage('aslr-capture');
+  }, []);
 
   const fail = useCallback((e) => {
     const message =
@@ -445,6 +502,14 @@ export default function App() {
       return <ResultsScreen result={result} onBack={() => setStage('session')} />;
     case 'session':
     default:
-      return <SessionScreen profile={profile} trials={trials} onNewTrial={startNewTrial} onAnalyze={runAnalysis} />;
+      return (
+        <SessionScreen
+          profile={profile}
+          trials={trials}
+          onNewTrial={startNewTrial}
+          onAnalyze={runAnalysis}
+          onNewSession={startNewSession}
+        />
+      );
   }
 }

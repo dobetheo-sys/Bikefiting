@@ -123,9 +123,16 @@ du spec — "signal correctif"), pas par oubli.
 
 ### 5. Boucle de feedback post-sortie (§7 du spec)
 `recalibrateWeights()` existe et est testée dans le moteur, mais rien ne l'appelle : pas de
-questionnaire post-sortie dans l'app, poids neutres (1.0) utilisés partout. Nécessite de
-persister les essais/scores d'une session à l'autre (rien n'est sauvegardé aujourd'hui — tout
-vit en state React, perdu au reload) avant que ça ait du sens.
+questionnaire post-sortie dans l'app, poids neutres (1.0) utilisés partout. La persistance de
+session (souplesse/profil/essais déjà validés) existe maintenant via `localStorage` (retour
+terrain : un plantage du navigateur en pleine capture faisait tout perdre — voir tâche 2 du
+07/08) — mais elle ne survit qu'à un seul appareil/navigateur, rien n'est envoyé à un serveur.
+Une vraie boucle de feedback nécessiterait d'y ajouter la persistance des scores post-sortie.
+
+### 6. Import galerie (07/08/2026) : vérifier sur vrai appareil que le fichier importé est
+bien lisible par `sampleVideoFrames`/`createImageBitmap` — codecs variables selon l'appli
+caméra source (HEVC iOS, etc.), pas testé au-delà du principe (fichier généré par
+`MediaRecorder` du navigateur, jamais un vrai fichier caméra native, dans ce sandbox).
 
 ### Hors scope V1 (ne pas commencer sans arbitrage explicite)
 - Module position guidon (réutilise ce pipeline, plages différentes, cf. spec §10)

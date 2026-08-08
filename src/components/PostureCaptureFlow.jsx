@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp, Crosshair } from 'lucide-react';
+import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp, Crosshair, Upload } from 'lucide-react';
 
 // posture-capture-flow.jsx
 // Flux de capture réel (caméra du téléphone) pour les deux entrées du pipeline §2 du spec :
@@ -51,6 +51,18 @@ const MODES = {
 
 const VIDEO_MODES = new Set(['profile_video', 'aslr_test']);
 
+// Mémorise la longueur du repère d'étalonnage (ex. largeur de cintre) d'une capture à
+// l'autre — c'est en général toujours le même repère, pas la peine de le retaper.
+const REF_LENGTH_STORAGE_KEY = 'posture-aero-ref-length-cm';
+
+function loadStoredRefLength() {
+  try {
+    return localStorage.getItem(REF_LENGTH_STORAGE_KEY) ?? '40';
+  } catch {
+    return '40';
+  }
+}
+
 function formatElapsed(ms) {
   const s = Math.floor(ms / 1000);
   const cs = Math.floor((ms % 1000) / 100);
@@ -67,7 +79,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
   const [capturedMeta, setCapturedMeta] = useState(null);
   const [checklistOpen, setChecklistOpen] = useState(true);
   const [taps, setTaps] = useState([]);
-  const [refLengthCm, setRefLengthCm] = useState('40');
+  const [refLengthCm, setRefLengthCm] = useState(loadStoredRefLength);
   const [tilt, setTilt] = useState(null);
   const [tiltOffset, setTiltOffset] = useState(0);
 
@@ -104,6 +116,14 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
   }, [releaseWakeLock]);
 
   useEffect(() => () => { stopStream(); clearInterval(timerRef.current); }, [stopStream]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(REF_LENGTH_STORAGE_KEY, refLengthCm);
+    } catch {
+      // ignoré : pas bloquant si le stockage est indisponible
+    }
+  }, [refLengthCm]);
 
   // Le wake lock est automatiquement relâché par le navigateur quand l'onglet passe en
   // arrière-plan (ex. notification, changement d'appli) — on le redemande au retour si la
@@ -206,6 +226,47 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
       setTaps([]);
       setScreen('calibrate');
     }, 'image/jpeg', 0.92);
+  };
+
+  // Import depuis la galerie — utile si la caméra intégrée est capricieuse (retour
+  // terrain) ou pour réutiliser une vidéo/photo déjà prise avec l'appli caméra native,
+  // plus fiable sur certains téléphones que l'enregistrement direct dans le navigateur.
+  const importVideo = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    const finish = (durationMs) => {
+      capturedBlobRef.current = file;
+      setCapturedUrl(url);
+      setCapturedMeta({ type: 'video', sizeKb: Math.round(file.size / 1024), durationMs });
+      setScreen('review');
+    };
+    probe.onloadedmetadata = () => finish(Math.round(probe.duration * 1000));
+    probe.onerror = () => finish(0);
+    probe.src = url;
+  };
+
+  const importPhoto = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      if (canvasRef.current) {
+        canvasRef.current.width = img.naturalWidth;
+        canvasRef.current.height = img.naturalHeight;
+      }
+      capturedBlobRef.current = file;
+      setCapturedUrl(url);
+      setCapturedMeta({ type: 'photo', sizeKb: Math.round(file.size / 1024), width: img.naturalWidth, height: img.naturalHeight });
+      setTaps([]);
+      setScreen('calibrate');
+    };
+    img.src = url;
   };
 
   const retake = () => {
@@ -371,7 +432,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
               </div>
 
               {/* Contrôles */}
-              <div className="bg-black px-6 py-5 flex items-center justify-center">
+              <div className="bg-black px-6 py-5 flex flex-col items-center justify-center gap-3">
                 {VIDEO_MODES.has(mode) ? (
                   recording ? (
                     <button
@@ -382,22 +443,36 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                       <Square className="w-5 h-5 text-white" fill="white" />
                     </button>
                   ) : (
-                    <button
-                      onClick={startRecording}
-                      className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-amber-400 ring-offset-2 ring-offset-black"
-                      aria-label="Démarrer l'enregistrement"
-                    >
-                      <span className="w-12 h-12 rounded-full bg-red-500" />
-                    </button>
+                    <>
+                      <button
+                        onClick={startRecording}
+                        className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-amber-400 ring-offset-2 ring-offset-black"
+                        aria-label="Démarrer l'enregistrement"
+                      >
+                        <span className="w-12 h-12 rounded-full bg-red-500" />
+                      </button>
+                      <label className="text-xs text-neutral-500 underline underline-offset-4 flex items-center gap-1.5 cursor-pointer focus-within:ring-2 focus-within:ring-amber-400 rounded px-1">
+                        <Upload className="w-3.5 h-3.5" />
+                        Importer une vidéo depuis la galerie
+                        <input type="file" accept="video/*" className="hidden" onChange={importVideo} />
+                      </label>
+                    </>
                   )
                 ) : (
-                  <button
-                    onClick={capturePhoto}
-                    className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400 ring-offset-2 ring-offset-black"
-                    aria-label="Prendre la photo"
-                  >
-                    <span className="w-12 h-12 rounded-full bg-neutral-100" />
-                  </button>
+                  <>
+                    <button
+                      onClick={capturePhoto}
+                      className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400 ring-offset-2 ring-offset-black"
+                      aria-label="Prendre la photo"
+                    >
+                      <span className="w-12 h-12 rounded-full bg-neutral-100" />
+                    </button>
+                    <label className="text-xs text-neutral-500 underline underline-offset-4 flex items-center gap-1.5 cursor-pointer focus-within:ring-2 focus-within:ring-cyan-400 rounded px-1">
+                      <Upload className="w-3.5 h-3.5" />
+                      Importer une photo depuis la galerie
+                      <input type="file" accept="image/*" className="hidden" onChange={importPhoto} />
+                    </label>
+                  </>
                 )}
               </div>
             </>
