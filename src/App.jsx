@@ -42,32 +42,42 @@ function initialStageFor(saved) {
   return 'aslr-capture';
 }
 
-async function samplePoseFramesFromVideo(blob, sampleCount) {
+// Lecture accélérée pendant l'échantillonnage (retour terrain : l'analyse en temps réel
+// d'une vidéo de 15-20s se sentait très longue) — voir video-frame-sampler.ts pour la
+// justification du facteur retenu.
+const SAMPLING_PLAYBACK_RATE = 4;
+
+async function samplePoseFramesFromVideo(blob, sampleCount, onProgress) {
   const fileset = await getVisionFileset();
   const landmarker = await createBikeFitPoseLandmarker(fileset);
   try {
     const frames = [];
-    await sampleVideoFrames(blob, sampleCount, ({ video, timestampMs }) => {
-      const result = landmarker.detectForVideo(video, timestampMs);
-      const frame = toPoseFrame(result, timestampMs);
-      if (frame) frames.push(frame);
-    });
+    await sampleVideoFrames(
+      blob,
+      sampleCount,
+      ({ video, timestampMs }) => {
+        const result = landmarker.detectForVideo(video, timestampMs);
+        const frame = toPoseFrame(result, timestampMs);
+        if (frame) frames.push(frame);
+      },
+      { playbackRate: SAMPLING_PLAYBACK_RATE, onProgress }
+    );
     return frames;
   } finally {
     landmarker.close();
   }
 }
 
-async function processAslrVideo(blob) {
-  const frames = await samplePoseFramesFromVideo(blob, ASLR_SAMPLE_COUNT);
+async function processAslrVideo(blob, onProgress) {
+  const frames = await samplePoseFramesFromVideo(blob, ASLR_SAMPLE_COUNT, onProgress);
   if (frames.length === 0) {
     throw new Error("Aucune pose détectée sur la vidéo du test de souplesse — vérifie le cadrage (hanche et jambe entières visibles).");
   }
   return extractAslrAngle(frames);
 }
 
-async function processProfileVideoTrial(blob) {
-  const frames = await samplePoseFramesFromVideo(blob, TRIAL_SAMPLE_COUNT);
+async function processProfileVideoTrial(blob, onProgress) {
+  const frames = await samplePoseFramesFromVideo(blob, TRIAL_SAMPLE_COUNT, onProgress);
   if (frames.length === 0) {
     throw new Error("Aucune pose détectée sur la vidéo — vérifie le cadrage (corps entier visible) et l'éclairage.");
   }
@@ -98,12 +108,23 @@ function Shell({ children }) {
   );
 }
 
-function Busy({ label }) {
+function Busy({ label, progress }) {
+  const pct = progress && progress.total > 0 ? Math.min(100, Math.round((progress.current / progress.total) * 100)) : null;
   return (
     <Shell>
-      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center max-w-xs mx-auto w-full">
         <Loader2 className="w-6 h-6 text-amber-400 animate-spin mb-4" />
-        <p className="text-sm text-neutral-300">{label}</p>
+        <p className="text-sm text-neutral-300 mb-4">{label}</p>
+        {pct !== null && (
+          <>
+            <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden">
+              <div className="h-full bg-amber-400 transition-[width] duration-150" style={{ width: `${pct}%` }} />
+            </div>
+            <p className="text-xs text-neutral-500 mt-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
+              {progress.current}/{progress.total} images analysées · {pct}%
+            </p>
+          </>
+        )}
       </div>
     </Shell>
   );
@@ -361,6 +382,7 @@ export default function App() {
   const [pendingTrial, setPendingTrial] = useState(null);
   const [captureKey, setCaptureKey] = useState(0);
   const [busy, setBusy] = useState(null);
+  const [busyProgress, setBusyProgress] = useState(null);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
 
@@ -403,8 +425,9 @@ export default function App() {
     async (payload) => {
       if (!payload.blob) return fail(new Error('Capture invalide : aucune donnée récupérée.'));
       setBusy('Analyse du test de souplesse…');
+      setBusyProgress(null);
       try {
-        const angle = await processAslrVideo(payload.blob);
+        const angle = await processAslrVideo(payload.blob, (current, total) => setBusyProgress({ current, total }));
         setAslrAngle(angle);
         setBusy(null);
         setStage('profile-form');
@@ -431,8 +454,9 @@ export default function App() {
     async (payload) => {
       if (!payload.blob) return fail(new Error('Capture invalide : aucune donnée récupérée.'));
       setBusy('Analyse de la vidéo profil…');
+      setBusyProgress(null);
       try {
-        const angles = await processProfileVideoTrial(payload.blob);
+        const angles = await processProfileVideoTrial(payload.blob, (current, total) => setBusyProgress({ current, total }));
         setPendingTrial({ angles });
         setBusy(null);
         setStage('trial-photo');
@@ -447,6 +471,7 @@ export default function App() {
     async (payload) => {
       if (!payload.blob || !payload.calibration) return fail(new Error('Étalonnage manquant (2 points requis).'));
       setBusy('Analyse de la photo frontale…');
+      setBusyProgress(null);
       try {
         const pfsaCm2 = await processFrontalPhoto(payload.blob, payload.calibration);
         setPendingTrial((prev) => ({
@@ -485,7 +510,7 @@ export default function App() {
   }, [profile]);
 
   if (error) return <ErrorScreen message={error} onRetry={retryFromError} />;
-  if (busy) return <Busy label={busy} />;
+  if (busy) return <Busy label={busy} progress={busyProgress} />;
 
   switch (stage) {
     case 'aslr-capture':

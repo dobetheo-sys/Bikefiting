@@ -21,15 +21,29 @@ export interface SampledFrame {
   timestampMs: number;
 }
 
+export interface SampleVideoFramesOptions {
+  // Accélère la lecture pendant l'échantillonnage (retour terrain : l'analyse en lecture
+  // temps réel d'une vidéo de 15-20s se sentait très longue). requestVideoFrameCallback
+  // continue de livrer de vraies frames décodées à un rythme accéléré — vérifié à 4x contre
+  // un fichier réel (39/39 échantillons toujours à des temps distincts et corrects, ~4x plus
+  // rapide). Pas poussé plus haut par prudence : le traitement par frame (inférence pose,
+  // pas juste ce test) est plus lourd que ce sampling seul et pourrait ne pas suivre sur un
+  // appareil bas de gamme.
+  playbackRate?: number;
+  onProgress?: (done: number, total: number) => void;
+}
+
 function sampleByPlayback(
   video: HTMLVideoElement,
   duration: number,
   sampleCount: number,
-  onFrame: (frame: SampledFrame) => void
+  onFrame: (frame: SampledFrame) => void,
+  options: SampleVideoFramesOptions
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const steps = Math.max(1, sampleCount - 1);
     let nextIndex = 0;
+    video.playbackRate = options.playbackRate ?? 1;
 
     function cleanup() {
       video.removeEventListener('ended', onEnded);
@@ -46,6 +60,7 @@ function sampleByPlayback(
       while (nextIndex < sampleCount && t >= (nextIndex / steps) * duration) {
         onFrame({ video, timestampMs: Math.round(t * 1000) });
         nextIndex += 1;
+        options.onProgress?.(nextIndex, sampleCount);
       }
       if (nextIndex >= sampleCount) {
         cleanup();
@@ -65,7 +80,8 @@ async function sampleBySeeking(
   video: HTMLVideoElement,
   duration: number,
   sampleCount: number,
-  onFrame: (frame: SampledFrame) => void
+  onFrame: (frame: SampledFrame) => void,
+  options: SampleVideoFramesOptions
 ): Promise<void> {
   const steps = Math.max(1, sampleCount - 1);
   for (let i = 0; i < sampleCount; i++) {
@@ -75,13 +91,15 @@ async function sampleBySeeking(
       video.currentTime = t;
     });
     onFrame({ video, timestampMs: Math.round(t * 1000) });
+    options.onProgress?.(i + 1, sampleCount);
   }
 }
 
 export async function sampleVideoFrames(
   blob: Blob,
   sampleCount: number,
-  onFrame: (frame: SampledFrame) => void
+  onFrame: (frame: SampledFrame) => void,
+  options: SampleVideoFramesOptions = {}
 ): Promise<void> {
   const url = URL.createObjectURL(blob);
   const video = document.createElement('video');
@@ -102,9 +120,9 @@ export async function sampleVideoFrames(
     }
 
     if (typeof video.requestVideoFrameCallback === 'function') {
-      await sampleByPlayback(video, duration, sampleCount, onFrame);
+      await sampleByPlayback(video, duration, sampleCount, onFrame, options);
     } else {
-      await sampleBySeeking(video, duration, sampleCount, onFrame);
+      await sampleBySeeking(video, duration, sampleCount, onFrame, options);
     }
   } finally {
     URL.revokeObjectURL(url);
