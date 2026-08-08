@@ -193,6 +193,22 @@ rédhibitoire vu les connexions lentes observées (quelques Ko/s par moments) �
 considérer qu'en dernier recours, et peut-être avec un message d'attente explicite sur le
 temps de téléchargement.
 
+### Import vidéo mis en avant par défaut (08/08/2026)
+Décision produit après cette session de debug : l'enregistrement natif (appli caméra du
+téléphone) est bien plus fiable que `MediaRecorder` dans le navigateur — c'est la source
+directe des bugs #1 et #3 ci-dessus. Pour les modes vidéo (`profile_video`, `aslr_test`),
+`PostureCaptureFlow.jsx` n'ouvre plus la caméra du navigateur par défaut : elle affiche la
+checklist + un bouton "Choisir la vidéo" (import direct, sans jamais demander la permission
+caméra), avec un lien "Filmer directement dans l'appli" en repli pour qui préfère l'ancien
+comportement. La photo frontale reste en capture caméra directe (pas de bug identifié
+là-dessus, changement non demandé). `importVideo()` affiche maintenant une vraie erreur
+(plutôt que de continuer silencieusement avec une durée à 0) si le fichier ne peut pas être
+décodé — cas HEVC (.mov iPhone) non vérifié sur un vrai appareil : l'échec de décodage vu
+dans ce sandbox (Playwright/Chromium open-source sans codecs propriétaires) n'est pas
+représentatif d'un vrai téléphone (Safari/iOS décode HEVC nativement en matériel ; Android
+généralement aussi via le framework média de l'OS) — à confirmer sur un vrai test si un
+utilisateur importe un fichier HEVC.
+
 ### Hors scope V1 (ne pas commencer sans arbitrage explicite)
 - Module position guidon (réutilise ce pipeline, plages différentes, cf. spec §10)
 - Vue frontale dynamique (vidéo plutôt que photo statique)

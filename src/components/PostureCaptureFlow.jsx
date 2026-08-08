@@ -70,6 +70,29 @@ function formatElapsed(ms) {
   return `${String(s).padStart(2, '0')}.${cs}s`;
 }
 
+function ChecklistPanel({ mode, open, onToggle }) {
+  return (
+    <div className="bg-neutral-900 border-t border-neutral-800">
+      <button onClick={onToggle} className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-neutral-400 focus:outline-none">
+        <span className="tracking-wide uppercase" style={{ fontFamily: 'ui-monospace, monospace' }}>
+          Checklist · {MODES[mode].label}
+        </span>
+        {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+      </button>
+      {open && (
+        <ul className="px-4 pb-3 space-y-1.5">
+          {MODES[mode].checklist.map((item, i) => (
+            <li key={i} className="text-xs text-neutral-300 flex gap-2">
+              <span className="text-amber-400 shrink-0">·</span>
+              {item}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function PostureCaptureFlow({ onCaptured, initialMode }) {
   const [screen, setScreen] = useState('intro'); // intro | camera | review | calibrate
   const [mode, setMode] = useState(initialMode ?? null);
@@ -83,6 +106,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
   const [refLengthCm, setRefLengthCm] = useState(loadStoredRefLength);
   const [tilt, setTilt] = useState(null);
   const [tiltOffset, setTiltOffset] = useState(0);
+  const [videoCaptureUi, setVideoCaptureUi] = useState('import'); // 'import' | 'live' — modes vidéo seulement
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -147,16 +171,28 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
     return () => window.removeEventListener('deviceorientation', onOrientation);
   }, []);
 
-  const startCamera = useCallback(async (m) => {
+  // Pour les modes vidéo, l'enregistrement natif (appli caméra du téléphone) est bien plus
+  // fiable que MediaRecorder dans le navigateur — c'est justement la source de la plupart
+  // des bugs réels rencontrés (webm sans index de seek, écran qui se verrouille, permissions
+  // capricieuses). Par défaut on n'ouvre donc PAS la caméra du navigateur pour ces modes :
+  // on affiche direct la checklist + un bouton d'import. `live: true` force l'ancien
+  // comportement (filmer directement dans l'appli), gardé en repli pour qui préfère.
+  const startCamera = useCallback(async (m, { live = false } = {}) => {
     setError(null);
     setMode(m);
     setChecklistOpen(true);
+    if (VIDEO_MODES.has(m) && !live) {
+      setVideoCaptureUi('import');
+      setScreen('camera');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
       streamRef.current = stream;
+      setVideoCaptureUi('live');
       setScreen('camera');
       // srcObject assigné après le rendu (voir effect ci-dessous)
       acquireWakeLock();
@@ -169,6 +205,8 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
       setScreen('camera');
     }
   }, [acquireWakeLock]);
+
+  const startLiveVideoCapture = () => startCamera(mode, { live: true });
 
   useEffect(() => {
     if (screen === 'camera' && videoRef.current && streamRef.current) {
@@ -239,14 +277,18 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
     const url = URL.createObjectURL(file);
     const probe = document.createElement('video');
     probe.preload = 'metadata';
-    const finish = (durationMs) => {
+    probe.onloadedmetadata = () => {
       capturedBlobRef.current = file;
       setCapturedUrl(url);
-      setCapturedMeta({ type: 'video', sizeKb: Math.round(file.size / 1024), durationMs });
+      setCapturedMeta({ type: 'video', sizeKb: Math.round(file.size / 1024), durationMs: Math.round(probe.duration * 1000) });
       setScreen('review');
     };
-    probe.onloadedmetadata = () => finish(Math.round(probe.duration * 1000));
-    probe.onerror = () => finish(0);
+    // Échec réel de décodage (format non supporté par ce navigateur, ex. certains .mov) —
+    // mieux vaut le dire clairement que de laisser passer un fichier illisible plus loin.
+    probe.onerror = () => {
+      URL.revokeObjectURL(url);
+      setError('Cette vidéo ne peut pas être lue par ce navigateur (format non supporté). Essaie de la réexporter en .mp4 ou .mov standard, ou filme directement dans l’appli.');
+    };
     probe.src = url;
   };
 
@@ -369,6 +411,32 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                 Retour
               </button>
             </div>
+          ) : VIDEO_MODES.has(mode) && videoCaptureUi === 'import' ? (
+            <>
+              <div className="flex-1 flex flex-col items-center justify-center px-6 text-center bg-black">
+                <Video className="w-9 h-9 text-neutral-700 mb-4" />
+                <p className="text-neutral-300 text-sm max-w-xs leading-relaxed">
+                  Filme {MODES[mode].label} avec l'appli caméra de ton téléphone en suivant la checklist ci-dessous,
+                  puis importe le fichier ici.
+                </p>
+              </div>
+
+              <ChecklistPanel mode={mode} open={checklistOpen} onToggle={() => setChecklistOpen((v) => !v)} />
+
+              <div className="bg-black px-6 py-5 flex flex-col items-center gap-3">
+                <label className="w-full flex items-center justify-center gap-2 py-3.5 rounded-lg bg-amber-400 text-neutral-950 font-medium cursor-pointer focus-within:ring-2 focus-within:ring-amber-200">
+                  <Upload className="w-4 h-4" />
+                  Choisir la vidéo
+                  <input type="file" accept="video/*" className="hidden" onChange={importVideo} />
+                </label>
+                <button
+                  onClick={startLiveVideoCapture}
+                  className="text-xs text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+                >
+                  Filmer directement dans l'appli
+                </button>
+              </div>
+            </>
           ) : (
             <>
               <div className="relative flex-1 overflow-hidden bg-black">
@@ -409,28 +477,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                 )}
               </div>
 
-              {/* Checklist repliable */}
-              <div className="bg-neutral-900 border-t border-neutral-800">
-                <button
-                  onClick={() => setChecklistOpen((v) => !v)}
-                  className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-neutral-400 focus:outline-none"
-                >
-                  <span className="tracking-wide uppercase" style={{ fontFamily: 'ui-monospace, monospace' }}>
-                    Checklist · {MODES[mode].label}
-                  </span>
-                  {checklistOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-                </button>
-                {checklistOpen && (
-                  <ul className="px-4 pb-3 space-y-1.5">
-                    {MODES[mode].checklist.map((item, i) => (
-                      <li key={i} className="text-xs text-neutral-300 flex gap-2">
-                        <span className="text-amber-400 shrink-0">·</span>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              <ChecklistPanel mode={mode} open={checklistOpen} onToggle={() => setChecklistOpen((v) => !v)} />
 
               {/* Contrôles */}
               <div className="bg-black px-6 py-5 flex flex-col items-center justify-center gap-3">
@@ -444,20 +491,13 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                       <Square className="w-5 h-5 text-white" fill="white" />
                     </button>
                   ) : (
-                    <>
-                      <button
-                        onClick={startRecording}
-                        className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-amber-400 ring-offset-2 ring-offset-black"
-                        aria-label="Démarrer l'enregistrement"
-                      >
-                        <span className="w-12 h-12 rounded-full bg-red-500" />
-                      </button>
-                      <label className="text-xs text-neutral-500 underline underline-offset-4 flex items-center gap-1.5 cursor-pointer focus-within:ring-2 focus-within:ring-amber-400 rounded px-1">
-                        <Upload className="w-3.5 h-3.5" />
-                        Importer une vidéo depuis la galerie
-                        <input type="file" accept="video/*" className="hidden" onChange={importVideo} />
-                      </label>
-                    </>
+                    <button
+                      onClick={startRecording}
+                      className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-amber-400 ring-offset-2 ring-offset-black"
+                      aria-label="Démarrer l'enregistrement"
+                    >
+                      <span className="w-12 h-12 rounded-full bg-red-500" />
+                    </button>
                   )
                 ) : (
                   <>
