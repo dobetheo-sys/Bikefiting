@@ -42,7 +42,8 @@ const MODES = {
     label: 'test souplesse (ASLR)',
     checklist: [
       'Allongé sur le dos, téléphone au sol/sur un support, vue de côté (sagittale)',
-      'Cadrage : hanche et jambe testée entières visibles',
+      'Recule le téléphone : laisse de la place au-dessus de toi dans le cadre, la jambe monte plus haut que prévu',
+      'Cadrage : hanche, jambe testée ET pied entièrement visibles, même en haut de la levée',
       'Jambe testée tendue, genou verrouillé',
       'Lève la jambe le plus haut possible sans plier le genou, sans forcer',
     ],
