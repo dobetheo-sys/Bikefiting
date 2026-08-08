@@ -79,13 +79,44 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
   const timerRef = useRef(null);
   const startedAtRef = useRef(0);
   const capturedBlobRef = useRef(null);
+  const wakeLockRef = useRef(null);
+
+  const releaseWakeLock = useCallback(() => {
+    wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
+  }, []);
+
+  // Best-effort : évite que le téléphone se verrouille pendant un enregistrement (retour
+  // terrain — un verrouillage en pleine capture coupe/corrompt la vidéo). API non supportée
+  // partout (ex. anciens navigateurs) : échec silencieux, la capture reste utilisable.
+  const acquireWakeLock = useCallback(async () => {
+    try {
+      wakeLockRef.current = await navigator.wakeLock?.request('screen');
+    } catch {
+      // ignoré : best-effort
+    }
+  }, []);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-  }, []);
+    releaseWakeLock();
+  }, [releaseWakeLock]);
 
   useEffect(() => () => { stopStream(); clearInterval(timerRef.current); }, [stopStream]);
+
+  // Le wake lock est automatiquement relâché par le navigateur quand l'onglet passe en
+  // arrière-plan (ex. notification, changement d'appli) — on le redemande au retour si la
+  // caméra est toujours active, sinon le verrouillage peut se reproduire après coup.
+  useEffect(() => {
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible' && screen === 'camera' && streamRef.current) {
+        acquireWakeLock();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [screen, acquireWakeLock]);
 
   useEffect(() => {
     function onOrientation(e) {
@@ -107,6 +138,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
       streamRef.current = stream;
       setScreen('camera');
       // srcObject assigné après le rendu (voir effect ci-dessous)
+      acquireWakeLock();
     } catch (e) {
       const msg =
         e && e.name === 'NotAllowedError'
@@ -115,7 +147,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
       setError(msg);
       setScreen('camera');
     }
-  }, []);
+  }, [acquireWakeLock]);
 
   useEffect(() => {
     if (screen === 'camera' && videoRef.current && streamRef.current) {
