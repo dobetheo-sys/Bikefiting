@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp, Crosshair, Upload } from 'lucide-react';
 
 // posture-capture-flow.jsx
 // Flux de capture réel (caméra du téléphone) pour les deux entrées du pipeline §2 du spec :
@@ -15,7 +15,9 @@ import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, Ch
 // Point d'incertitude non résolu (cf. HANDOFF_CLAUDE_CODE.md, tâche 2) : le niveau/tilt
 // (DeviceOrientationEvent) peut nécessiter DeviceOrientationEvent.requestPermission() sur
 // iOS 13+, non géré ici — dégradation silencieuse (pas d'indicateur) plutôt que crash si
-// l'event n'arrive jamais sur ces appareils.
+// l'event n'arrive jamais sur ces appareils. Le capteur n'étant pas forcément calé sur 0°
+// à la verticale (retour terrain : ~20° d'écart constaté sur un appareil réel), l'indicateur
+// de niveau est tappable pour caler manuellement un zéro (voir tiltOffset/calibrateLevel).
 
 const MODES = {
   profile_video: {
@@ -40,7 +42,8 @@ const MODES = {
     label: 'test souplesse (ASLR)',
     checklist: [
       'Allongé sur le dos, téléphone au sol/sur un support, vue de côté (sagittale)',
-      'Cadrage : hanche et jambe testée entières visibles',
+      'Recule le téléphone : laisse de la place au-dessus de toi dans le cadre, la jambe monte plus haut que prévu',
+      'Cadrage : hanche, jambe testée ET pied entièrement visibles, même en haut de la levée',
       'Jambe testée tendue, genou verrouillé',
       'Lève la jambe le plus haut possible sans plier le genou, sans forcer',
     ],
@@ -49,13 +52,48 @@ const MODES = {
 
 const VIDEO_MODES = new Set(['profile_video', 'aslr_test']);
 
+// Mémorise la longueur du repère d'étalonnage (ex. largeur de cintre) d'une capture à
+// l'autre — c'est en général toujours le même repère, pas la peine de le retaper.
+const REF_LENGTH_STORAGE_KEY = 'posture-aero-ref-length-cm';
+
+function loadStoredRefLength() {
+  try {
+    return localStorage.getItem(REF_LENGTH_STORAGE_KEY) ?? '40';
+  } catch {
+    return '40';
+  }
+}
+
 function formatElapsed(ms) {
   const s = Math.floor(ms / 1000);
   const cs = Math.floor((ms % 1000) / 100);
   return `${String(s).padStart(2, '0')}.${cs}s`;
 }
 
-export default function PostureCaptureFlow({ onCaptured, initialMode }) {
+function ChecklistPanel({ mode, open, onToggle }) {
+  return (
+    <div className="bg-neutral-900 border-t border-neutral-800">
+      <button onClick={onToggle} className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-neutral-400 focus:outline-none">
+        <span className="tracking-wide uppercase" style={{ fontFamily: 'ui-monospace, monospace' }}>
+          Checklist · {MODES[mode].label}
+        </span>
+        {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+      </button>
+      {open && (
+        <ul className="px-4 pb-3 space-y-1.5">
+          {MODES[mode].checklist.map((item, i) => (
+            <li key={i} className="text-xs text-neutral-300 flex gap-2">
+              <span className="text-amber-400 shrink-0">·</span>
+              {item}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }) {
   const [screen, setScreen] = useState('intro'); // intro | camera | review | calibrate
   const [mode, setMode] = useState(initialMode ?? null);
   const [error, setError] = useState(null);
@@ -65,8 +103,10 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
   const [capturedMeta, setCapturedMeta] = useState(null);
   const [checklistOpen, setChecklistOpen] = useState(true);
   const [taps, setTaps] = useState([]);
-  const [refLengthCm, setRefLengthCm] = useState('40');
+  const [refLengthCm, setRefLengthCm] = useState(loadStoredRefLength);
   const [tilt, setTilt] = useState(null);
+  const [tiltOffset, setTiltOffset] = useState(0);
+  const [videoCaptureUi, setVideoCaptureUi] = useState('import'); // 'import' | 'live' — modes vidéo seulement
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -76,13 +116,52 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
   const timerRef = useRef(null);
   const startedAtRef = useRef(0);
   const capturedBlobRef = useRef(null);
+  const wakeLockRef = useRef(null);
+
+  const releaseWakeLock = useCallback(() => {
+    wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
+  }, []);
+
+  // Best-effort : évite que le téléphone se verrouille pendant un enregistrement (retour
+  // terrain — un verrouillage en pleine capture coupe/corrompt la vidéo). API non supportée
+  // partout (ex. anciens navigateurs) : échec silencieux, la capture reste utilisable.
+  const acquireWakeLock = useCallback(async () => {
+    try {
+      wakeLockRef.current = await navigator.wakeLock?.request('screen');
+    } catch {
+      // ignoré : best-effort
+    }
+  }, []);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-  }, []);
+    releaseWakeLock();
+  }, [releaseWakeLock]);
 
   useEffect(() => () => { stopStream(); clearInterval(timerRef.current); }, [stopStream]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(REF_LENGTH_STORAGE_KEY, refLengthCm);
+    } catch {
+      // ignoré : pas bloquant si le stockage est indisponible
+    }
+  }, [refLengthCm]);
+
+  // Le wake lock est automatiquement relâché par le navigateur quand l'onglet passe en
+  // arrière-plan (ex. notification, changement d'appli) — on le redemande au retour si la
+  // caméra est toujours active, sinon le verrouillage peut se reproduire après coup.
+  useEffect(() => {
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible' && screen === 'camera' && streamRef.current) {
+        acquireWakeLock();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [screen, acquireWakeLock]);
 
   useEffect(() => {
     function onOrientation(e) {
@@ -92,18 +171,31 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
     return () => window.removeEventListener('deviceorientation', onOrientation);
   }, []);
 
-  const startCamera = useCallback(async (m) => {
+  // Pour les modes vidéo, l'enregistrement natif (appli caméra du téléphone) est bien plus
+  // fiable que MediaRecorder dans le navigateur — c'est justement la source de la plupart
+  // des bugs réels rencontrés (webm sans index de seek, écran qui se verrouille, permissions
+  // capricieuses). Par défaut on n'ouvre donc PAS la caméra du navigateur pour ces modes :
+  // on affiche direct la checklist + un bouton d'import. `live: true` force l'ancien
+  // comportement (filmer directement dans l'appli), gardé en repli pour qui préfère.
+  const startCamera = useCallback(async (m, { live = false } = {}) => {
     setError(null);
     setMode(m);
     setChecklistOpen(true);
+    if (VIDEO_MODES.has(m) && !live) {
+      setVideoCaptureUi('import');
+      setScreen('camera');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
       streamRef.current = stream;
+      setVideoCaptureUi('live');
       setScreen('camera');
       // srcObject assigné après le rendu (voir effect ci-dessous)
+      acquireWakeLock();
     } catch (e) {
       const msg =
         e && e.name === 'NotAllowedError'
@@ -112,7 +204,9 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
       setError(msg);
       setScreen('camera');
     }
-  }, []);
+  }, [acquireWakeLock]);
+
+  const startLiveVideoCapture = () => startCamera(mode, { live: true });
 
   useEffect(() => {
     if (screen === 'camera' && videoRef.current && streamRef.current) {
@@ -173,6 +267,51 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
     }, 'image/jpeg', 0.92);
   };
 
+  // Import depuis la galerie — utile si la caméra intégrée est capricieuse (retour
+  // terrain) ou pour réutiliser une vidéo/photo déjà prise avec l'appli caméra native,
+  // plus fiable sur certains téléphones que l'enregistrement direct dans le navigateur.
+  const importVideo = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    probe.onloadedmetadata = () => {
+      capturedBlobRef.current = file;
+      setCapturedUrl(url);
+      setCapturedMeta({ type: 'video', sizeKb: Math.round(file.size / 1024), durationMs: Math.round(probe.duration * 1000) });
+      setScreen('review');
+    };
+    // Échec réel de décodage (format non supporté par ce navigateur, ex. certains .mov) —
+    // mieux vaut le dire clairement que de laisser passer un fichier illisible plus loin.
+    probe.onerror = () => {
+      URL.revokeObjectURL(url);
+      setError('Cette vidéo ne peut pas être lue par ce navigateur (format non supporté). Essaie de la réexporter en .mp4 ou .mov standard, ou filme directement dans l’appli.');
+    };
+    probe.src = url;
+  };
+
+  const importPhoto = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      if (canvasRef.current) {
+        canvasRef.current.width = img.naturalWidth;
+        canvasRef.current.height = img.naturalHeight;
+      }
+      capturedBlobRef.current = file;
+      setCapturedUrl(url);
+      setCapturedMeta({ type: 'photo', sizeKb: Math.round(file.size / 1024), width: img.naturalWidth, height: img.naturalHeight });
+      setTaps([]);
+      setScreen('calibrate');
+    };
+    img.src = url;
+  };
+
   const retake = () => {
     setCapturedUrl(null);
     setCapturedMeta(null);
@@ -210,7 +349,11 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
     setScreen('intro');
   };
 
-  const isLevelOk = tilt === null || Math.abs(tilt) < 4;
+  // Le capteur d'inclinaison n'est pas forcément calé sur 0 quand le téléphone est vertical
+  // (ça varie d'un appareil à l'autre) — d'où le décalage manuel réglé via calibrateLevel().
+  const displayedTilt = tilt === null ? null : tilt - tiltOffset;
+  const isLevelOk = displayedTilt === null || Math.abs(displayedTilt) < 4;
+  const calibrateLevel = () => { if (tilt !== null) setTiltOffset(tilt); };
 
   return (
     <div className="w-full h-full min-h-screen bg-neutral-950 text-neutral-100 flex flex-col" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -268,6 +411,40 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                 Retour
               </button>
             </div>
+          ) : VIDEO_MODES.has(mode) && videoCaptureUi === 'import' ? (
+            <>
+              <div className="flex-1 flex flex-col items-center justify-center px-6 text-center bg-black">
+                <Video className="w-9 h-9 text-neutral-700 mb-4" />
+                <p className="text-neutral-300 text-sm max-w-xs leading-relaxed">
+                  Filme {MODES[mode].label} avec l'appli caméra de ton téléphone en suivant la checklist ci-dessous,
+                  puis importe le fichier ici.
+                </p>
+              </div>
+
+              <ChecklistPanel mode={mode} open={checklistOpen} onToggle={() => setChecklistOpen((v) => !v)} />
+
+              <div className="bg-black px-6 py-5 flex flex-col items-center gap-3">
+                <label className="w-full flex items-center justify-center gap-2 py-3.5 rounded-lg bg-amber-400 text-neutral-950 font-medium cursor-pointer focus-within:ring-2 focus-within:ring-amber-200">
+                  <Upload className="w-4 h-4" />
+                  Choisir la vidéo
+                  <input type="file" accept="video/*" className="hidden" onChange={importVideo} />
+                </label>
+                <button
+                  onClick={startLiveVideoCapture}
+                  className="text-xs text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+                >
+                  Filmer directement dans l'appli
+                </button>
+                {onCancel && (
+                  <button
+                    onClick={onCancel}
+                    className="text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+                  >
+                    Annuler
+                  </button>
+                )}
+              </div>
+            </>
           ) : (
             <>
               <div className="relative flex-1 overflow-hidden bg-black">
@@ -282,10 +459,20 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                     style={{ borderColor: 'rgba(232,230,225,0.35)', transform: 'translate(-50%,-50%)' }}
                   />
                   {/* Indicateur de niveau (best-effort, se cache si le capteur n'est pas dispo) */}
-                  {tilt !== null && (
-                    <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/50" style={{ fontFamily: 'ui-monospace, monospace' }}>
-                      <div className={`w-1.5 h-1.5 rounded-full ${isLevelOk ? 'bg-cyan-400' : 'bg-red-400'}`} />
-                      <span className="text-[11px] text-neutral-200">{isLevelOk ? 'niveau ok' : `inclinaison ${tilt.toFixed(0)}°`}</span>
+                  {displayedTilt !== null && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-auto">
+                      <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/50" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${isLevelOk ? 'bg-cyan-400' : 'bg-red-400'}`} />
+                        <span className="text-[11px] text-neutral-200">{isLevelOk ? 'niveau ok' : `inclinaison ${displayedTilt.toFixed(0)}°`}</span>
+                      </div>
+                      <button
+                        onClick={calibrateLevel}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400 text-neutral-950 text-xs font-medium shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-200"
+                        aria-label="Calibrer le niveau : tiens le téléphone bien droit puis touche ce bouton"
+                      >
+                        <Crosshair className="w-3.5 h-3.5" />
+                        Caler le niveau ici
+                      </button>
                     </div>
                   )}
                 </div>
@@ -298,31 +485,10 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                 )}
               </div>
 
-              {/* Checklist repliable */}
-              <div className="bg-neutral-900 border-t border-neutral-800">
-                <button
-                  onClick={() => setChecklistOpen((v) => !v)}
-                  className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-neutral-400 focus:outline-none"
-                >
-                  <span className="tracking-wide uppercase" style={{ fontFamily: 'ui-monospace, monospace' }}>
-                    Checklist · {MODES[mode].label}
-                  </span>
-                  {checklistOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-                </button>
-                {checklistOpen && (
-                  <ul className="px-4 pb-3 space-y-1.5">
-                    {MODES[mode].checklist.map((item, i) => (
-                      <li key={i} className="text-xs text-neutral-300 flex gap-2">
-                        <span className="text-amber-400 shrink-0">·</span>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              <ChecklistPanel mode={mode} open={checklistOpen} onToggle={() => setChecklistOpen((v) => !v)} />
 
               {/* Contrôles */}
-              <div className="bg-black px-6 py-5 flex items-center justify-center">
+              <div className="bg-black px-6 py-5 flex flex-col items-center justify-center gap-3">
                 {VIDEO_MODES.has(mode) ? (
                   recording ? (
                     <button
@@ -342,12 +508,27 @@ export default function PostureCaptureFlow({ onCaptured, initialMode }) {
                     </button>
                   )
                 ) : (
+                  <>
+                    <button
+                      onClick={capturePhoto}
+                      className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400 ring-offset-2 ring-offset-black"
+                      aria-label="Prendre la photo"
+                    >
+                      <span className="w-12 h-12 rounded-full bg-neutral-100" />
+                    </button>
+                    <label className="text-xs text-neutral-500 underline underline-offset-4 flex items-center gap-1.5 cursor-pointer focus-within:ring-2 focus-within:ring-cyan-400 rounded px-1">
+                      <Upload className="w-3.5 h-3.5" />
+                      Importer une photo depuis la galerie
+                      <input type="file" accept="image/*" className="hidden" onChange={importPhoto} />
+                    </label>
+                  </>
+                )}
+                {onCancel && !recording && (
                   <button
-                    onClick={capturePhoto}
-                    className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400 ring-offset-2 ring-offset-black"
-                    aria-label="Prendre la photo"
+                    onClick={onCancel}
+                    className="text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
                   >
-                    <span className="w-12 h-12 rounded-full bg-neutral-100" />
+                    Annuler
                   </button>
                 )}
               </div>

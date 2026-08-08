@@ -23,8 +23,9 @@ scores + sélection Pareto). Ce qui reste demande un vrai appareil pour être te
   confirmé contre `vision.d.ts` du package installé — pas `readCategoryIndices()` comme supposé
   au premier jet). N'a **jamais tourné contre un vrai modèle** — voir "Limite d'environnement".
 - `src/capture/pose-integration.ts` (nouveau) : `createBikeFitPoseLandmarker()` réel
-  (`PoseLandmarker`, mode `VIDEO`, modèle `pose_landmarker_lite`). `toPoseFrame()` (conversion
-  pure) testée. Jamais tourné contre une vraie vidéo — même blocage.
+  (`PoseLandmarker`, mode `VIDEO`, modèle `pose_landmarker_full` — passé de `lite` à `full`
+  le 08/08/2026, cf. section dédiée plus bas : `lite` ne détectait quasi aucune pose
+  exploitable sur une vraie vidéo ASLR difficile). `toPoseFrame()` (conversion pure) testée.
 - `src/capture/capture-processing.ts` (`extractAslrAngle`, nouveau) : angle cuisse/horizontale
   au point d'arrêt (dernier instant où le genou reste verrouillé, seuil 165° sur l'angle
   hanche-genou-cheville). Testé avec des coordonnées construites à la main (pas juste
@@ -99,6 +100,13 @@ ci-dessous, toujours ouverte pour cette raison précise).
 - **Point d'incertitude explicite, non résolu** : le niveau/tilt (`DeviceOrientationEvent`) peut
   nécessiter `DeviceOrientationEvent.requestPermission()` sur iOS 13+ (non géré — dégradation
   silencieuse plutôt que crash si l'event n'arrive jamais)
+- **Retour terrain (appareil réel, 06/08/2026)** : l'indicateur de niveau affichait ~20°
+  téléphone tenu droit — le capteur `gamma` n'est pas calé sur 0° à la verticale sur tous les
+  appareils. Corrigé par un étalonnage manuel : l'indicateur de niveau est maintenant un bouton
+  tappable (`calibrateLevel()` dans `PostureCaptureFlow.jsx`) qui capture la valeur `gamma`
+  courante comme décalage (`tiltOffset`) ; l'affichage et le seuil "niveau ok" utilisent ensuite
+  `tilt - tiltOffset`. Pas de correction automatique par appareil (pas de base de données de
+  calibration par modèle) — l'utilisateur cale le zéro lui-même en tenant le téléphone droit.
 
 ### 3. Décision à prendre : MediaPipe Hands pour le poignet
 Non câblé (cf. `capture-processing.ts`, en-tête de fichier). Avant d'investir dessus : le spec
@@ -116,9 +124,107 @@ du spec — "signal correctif"), pas par oubli.
 
 ### 5. Boucle de feedback post-sortie (§7 du spec)
 `recalibrateWeights()` existe et est testée dans le moteur, mais rien ne l'appelle : pas de
-questionnaire post-sortie dans l'app, poids neutres (1.0) utilisés partout. Nécessite de
-persister les essais/scores d'une session à l'autre (rien n'est sauvegardé aujourd'hui — tout
-vit en state React, perdu au reload) avant que ça ait du sens.
+questionnaire post-sortie dans l'app, poids neutres (1.0) utilisés partout. La persistance de
+session (souplesse/profil/essais déjà validés) existe maintenant via `localStorage` (retour
+terrain : un plantage du navigateur en pleine capture faisait tout perdre — voir tâche 2 du
+07/08) — mais elle ne survit qu'à un seul appareil/navigateur, rien n'est envoyé à un serveur.
+Une vraie boucle de feedback nécessiterait d'y ajouter la persistance des scores post-sortie.
+
+### 6. Import galerie (07/08/2026) : vérifier sur vrai appareil que le fichier importé est
+bien lisible par `sampleVideoFrames`/`createImageBitmap` — codecs variables selon l'appli
+caméra source (HEVC iOS, etc.), pas testé au-delà du principe (fichier généré par
+`MediaRecorder` du navigateur, jamais un vrai fichier caméra native, dans ce sandbox).
+
+### Bug réel trouvé et corrigé (08/08/2026) : angle ASLR à 0° sur vraie vidéo
+Retour terrain : test ASLR donnant systématiquement un angle de 0°. Diagnostiqué en
+rejouant la vraie vidéo (16 s, envoyée par l'utilisateur) dans un vrai Chromium — la
+vidéo elle-même est correcte (personne allongée, jambe levée bien visible), mais
+`video-frame-sampler.ts` échantillonnait par `video.currentTime = t` (seek), qui **ne
+fonctionne pas** sur un webm produit par `MediaRecorder` : `onseeked` se déclenche mais
+`currentTime` reste bloqué à 0 pour les 40/40 échantillons demandés (confirmé en
+reproduisant exactement la boucle du code contre le fichier réel — pas une supposition).
+Cause : ce webm n'a pas d'index Cues/SeekHead, que `MediaRecorder` n'écrit pas. Résultat :
+toutes les frames "analysées" étaient en fait la même frame initiale, avant le mouvement
+→ `extractAslrAngle` ne voyait jamais de genou verrouillé en position haute → renvoyait sa
+valeur par défaut (0). Corrigé en remplaçant le seek par un échantillonnage en lecture
+réelle via `requestVideoFrameCallback` (vraies frames décodées dans l'ordre de lecture,
+confirmé sur ce même fichier : 39 frames avec des temps réels distincts et croissants,
+contre 40/40 bloquées à 0.00s avant). Repli sur l'ancien seek si l'API n'est pas
+supportée par le navigateur (mieux que rien). **Ce bug touchait potentiellement aussi les
+vidéos essai (profil)**, même mécanisme de sampling — pas juste l'ASLR.
+
+### Bug réel #2 trouvé et corrigé (08/08/2026, même session) : angle ASLR sous-estimé (18,9°)
+Une fois le bug #1 corrigé, le même fichier réel donnait 18,9° au lieu des ~85° visibles à
+l'œil sur la vidéo (jambe clairement levée quasi à la verticale, cf. capture d'écran de la
+frame du pic). Cause distincte : `extractAslrAngle` arrêtait la mesure (`break`) dès le
+**tout premier** genou plié rencontré dans l'ordre chronologique des frames — or la vidéo
+réelle commence par une phase d'installation (l'utilisateur s'accroupit pour ajuster le
+téléphone avant de s'allonger, genou plié) **avant** le mouvement testé. Le seek cassé du
+bug #1 masquait ce second bug (tout retombait sur la frame 0, avant même l'installation).
+Corrigé en n'armant la règle d'arrêt qu'une fois la cuisse réellement engagée dans la levée
+(seuil `RAISE_ENGAGED_THRESHOLD_DEG = 15°`, genou plié) — les genoux pliés avant ce point
+(installation) sont ignorés, ceux après (vrai point d'arrêt clinique) arrêtent toujours la
+mesure comme prévu. Test de non-régression ajouté (`capture-processing.test.ts`) qui
+reproduit exactement ce scénario. Point de vigilance : le seuil de 15° est un choix
+d'ingénierie raisonné (cf. commentaire dans le code) mais pas sourcé cliniquement — à
+surveiller si des faux positifs d'armement apparaissent sur d'autres vidéos réelles.
+
+### Bug réel #3 diagnostiqué et corrigé (08/08/2026, même session) : détection de pose trop faible sur ce fichier
+Après les correctifs #1 et #2, le même fichier réel redonnait encore 18,9°, identique à
+avant. Diagnostic à distance impossible dans ce sandbox (PoseLandmarker ne peut pas y
+tourner, cf. limite d'environnement — le proxy du sandbox bloque ECH/GREASE-ECH côté
+Chromium alors que `curl` passe, donc même une reproduction Playwright échoue en
+"Failed to fetch"/`ERR_CONNECTION_RESET` sur le fetch du modèle). Solution : exposer un
+diagnostic *à l'écran* (`extractAslrAngleTrace()`, affiché en petit sous le score ASLR
+dans `App.jsx`) pour que l'utilisateur puisse capturer les vrais chiffres depuis son
+téléphone (où le modèle charge normalement) et me les renvoyer en capture d'écran.
+Résultat obtenu : **1 seule frame sur 14 valides avait un genou droit détecté** (et 14/40
+échantillons seulement avaient une pose détectée du tout) — le modèle `pose_landmarker_lite`
+ne détecte quasiment aucune pose exploitable sur cette vidéo (allongé, caméra au sol très
+proche, cf. incertitude déjà notée tâche 1 : "le modèle Pose... sa fiabilité allongé n'est
+pas garantie"). Ce n'était donc plus un bug de logique dans `extractAslrAngle` (les
+correctifs #1/#2 restent corrects et nécessaires) mais un problème de **qualité de
+détection en amont**. Corrigé en passant du modèle `lite` (5.8 Mo) à `full` (9.4 Mo) dans
+`pose-integration.ts` — meilleure précision de détection, coût de téléchargement raisonnable
+(mis en cache après le premier chargement). **Non encore reconfirmé sur un vrai appareil**
+au moment d'écrire ceci — à vérifier avec le diagnostic à l'écran sur le prochain test.
+Si `full` ne suffit toujours pas, `heavy` (30.7 Mo) existe mais son poids est probablement
+rédhibitoire vu les connexions lentes observées (quelques Ko/s par moments) — à ne
+considérer qu'en dernier recours, et peut-être avec un message d'attente explicite sur le
+temps de téléchargement.
+
+### Import vidéo mis en avant par défaut (08/08/2026)
+Décision produit après cette session de debug : l'enregistrement natif (appli caméra du
+téléphone) est bien plus fiable que `MediaRecorder` dans le navigateur — c'est la source
+directe des bugs #1 et #3 ci-dessus. Pour les modes vidéo (`profile_video`, `aslr_test`),
+`PostureCaptureFlow.jsx` n'ouvre plus la caméra du navigateur par défaut : elle affiche la
+checklist + un bouton "Choisir la vidéo" (import direct, sans jamais demander la permission
+caméra), avec un lien "Filmer directement dans l'appli" en repli pour qui préfère l'ancien
+comportement. La photo frontale reste en capture caméra directe (pas de bug identifié
+là-dessus, changement non demandé). `importVideo()` affiche maintenant une vraie erreur
+(plutôt que de continuer silencieusement avec une durée à 0) si le fichier ne peut pas être
+décodé — cas HEVC (.mov iPhone) non vérifié sur un vrai appareil : l'échec de décodage vu
+dans ce sandbox (Playwright/Chromium open-source sans codecs propriétaires) n'est pas
+représentatif d'un vrai téléphone (Safari/iOS décode HEVC nativement en matériel ; Android
+généralement aussi via le framework média de l'OS) — à confirmer sur un vrai test si un
+utilisateur importe un fichier HEVC.
+
+### Écran "essai" restructuré en checklist (08/08/2026)
+Demande produit explicite (correction d'une première tentative pas alignée) : au lieu
+d'une séquence forcée vidéo → photo → réglages en 3 écrans plein écran successifs, un
+nouvel écran `TrialOverview` (`App.jsx`) liste les 3 étapes d'un essai (vidéo profil, photo
+frontale, réglages du vélo) avec, pour chacune, sa consigne courte, son statut (fait/à
+faire) et un bouton — dans n'importe quel ordre, avec retour possible à tout moment
+(`onCancel`). L'essai n'est ajouté à `trials` qu'une fois les 3 complétées (`saveTrial`),
+via un nouveau stage `trial-overview` qui orchestre `pendingTrial` (objet accumulé
+`{angles, frontal, deltas}` au lieu du flux linéaire précédent). `PostureCaptureFlow.jsx`
+a gagné une prop `onCancel` (lien "Annuler" sur l'écran caméra, import comme live) pour
+permettre ce retour arrière. Le test de souplesse (ASLR) n'est PAS concerné — il reste un
+step unique avant la boucle d'essais, confirmé explicitement par l'utilisateur.
+Vérifié en Chromium headless (Playwright) : navigation checklist ↔ vidéo/photo/réglages
+dans les deux sens, statut 0/3 → 1/3, bouton "Enregistrer" désactivé tant que les 3 ne sont
+pas faites — sans dépendre de MediaPipe (réglages testés en vrai, vidéo/photo testés
+jusqu'à l'écran de saisie/caméra, cf. limite d'environnement habituelle pour l'inférence).
 
 ### Hors scope V1 (ne pas commencer sans arbitrage explicite)
 - Module position guidon (réutilise ce pipeline, plages différentes, cf. spec §10)

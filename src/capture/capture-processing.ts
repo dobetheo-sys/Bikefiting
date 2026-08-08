@@ -126,8 +126,44 @@ export function extractTrialAngles(frames: PoseFrame[]): TrialAngles {
 
 const KNEE_STRAIGHT_THRESHOLD = 165; // sous ce seuil, le genou est considéré en train de plier -> fin de mesure
 
-export function extractAslrAngle(frames: PoseFrame[]): number {
-  if (frames.length === 0) throw new Error('extractAslrAngle: aucune frame fournie');
+// Sous ce seuil de cuisse, on considère qu'on est encore en position de repos/installation
+// (avant que la levée n'ait vraiment commencé), pas dans le mouvement testé lui-même.
+//
+// Bug réel trouvé sur une vraie vidéo ASLR (retour terrain, 08/08/2026) : la vidéo contient
+// naturellement une phase d'installation au tout début (l'utilisateur s'accroupit pour
+// ajuster le téléphone avant de s'allonger — genou plié) AVANT le mouvement testé. L'ancienne
+// logique arrêtait la mesure (`break`) dès le premier genou plié rencontré, y compris pendant
+// cette installation — donnant un angle proche de 0 ou très sous-estimé alors que la vraie
+// levée, filmée juste après, atteignait ~85° (vérifié en rejouant la vidéo réelle image par
+// image). Le seuil d'"engagement" ci-dessous retarde l'armement de la règle d'arrêt jusqu'à
+// ce que la cuisse soit réellement levée — les genoux pliés AVANT ce point (installation)
+// sont ignorés plutôt que fatals ; ceux APRÈS (le vrai point d'arrêt clinique du test)
+// arrêtent toujours la mesure comme prévu (cf. test "un angle plus élevé après que le genou
+// ait plié n'est pas retenu").
+const RAISE_ENGAGED_THRESHOLD_DEG = 15;
+
+// Retour terrain (08/08/2026, suite) : même après le fix ci-dessus, la même vidéo réelle
+// redonnait le même angle sous-estimé (18.9°) — donc l'armement se déclenchait quand même
+// trop tôt. Hypothèse la plus probable (non confirmée par des données réelles : le sandbox
+// de dev ne peut pas télécharger le modèle MediaPipe, cf. limite d'environnement — vérifiable
+// seulement via le téléphone de l'utilisateur) : la phase d'installation en gros plan flou
+// (cf. capture d'écran) donne des landmarks bruités qui peuvent franchir le seuil de 15° sur
+// UNE frame par hasard. On exige maintenant plusieurs frames straight-knee consécutives
+// au-dessus du seuil avant d'armer, pour filtrer un faux positif isolé. Reste un choix
+// d'ingénierie non validé sur vraies données — voir extractAslrAngleTrace() ci-dessous,
+// exposée pour afficher un diagnostic à l'écran et confirmer/infirmer sur le prochain test
+// réel (ce sandbox ne peut pas faire tourner PoseLandmarker pour vérifier autrement).
+const ENGAGE_STREAK_FRAMES = 3;
+
+export interface AslrTrace {
+  angle: number;
+  framesTotal: number;
+  framesStraightKnee: number;
+  engagedAtIndex: number | null;
+  stoppedAtIndex: number | null; // null si jamais de genou plié après l'armement (fin de vidéo)
+}
+
+function computeAslrTrace(frames: PoseFrame[]): AslrTrace {
   const side = pickSide(frames);
   const S =
     side === 'RIGHT'
@@ -135,14 +171,49 @@ export function extractAslrAngle(frames: PoseFrame[]): number {
       : { HIP: IDX.LEFT_HIP, KNEE: IDX.LEFT_KNEE, ANKLE: IDX.LEFT_ANKLE };
 
   let maxThighAngle = 0;
-  for (const f of frames) {
-    const lm = f.landmarks;
+  let raiseEngaged = false;
+  let engageStreak = 0;
+  let framesStraightKnee = 0;
+  let engagedAtIndex: number | null = null;
+  let stoppedAtIndex: number | null = null;
+
+  for (let i = 0; i < frames.length; i++) {
+    const lm = frames[i].landmarks;
     const kneeAngle = angleAt(lm[S.HIP], lm[S.KNEE], lm[S.ANKLE]);
-    if (Number.isNaN(kneeAngle) || kneeAngle < KNEE_STRAIGHT_THRESHOLD) break; // genou qui plie -> fin de la mesure valide
+    if (Number.isNaN(kneeAngle) || kneeAngle < KNEE_STRAIGHT_THRESHOLD) {
+      if (raiseEngaged) {
+        stoppedAtIndex = i; // genou qui plie après le début de la levée -> fin de la mesure valide
+        break;
+      }
+      engageStreak = 0; // genou plié avant que la levée commence (installation) -> ignoré
+      continue;
+    }
+    framesStraightKnee++;
     const thighAngle = angleVsHorizontal(lm[S.HIP], lm[S.KNEE]);
-    if (!Number.isNaN(thighAngle)) maxThighAngle = Math.max(maxThighAngle, thighAngle);
+    if (Number.isNaN(thighAngle)) continue;
+    maxThighAngle = Math.max(maxThighAngle, thighAngle);
+    if (!raiseEngaged) {
+      engageStreak = thighAngle >= RAISE_ENGAGED_THRESHOLD_DEG ? engageStreak + 1 : 0;
+      if (engageStreak >= ENGAGE_STREAK_FRAMES) {
+        raiseEngaged = true;
+        engagedAtIndex = i - ENGAGE_STREAK_FRAMES + 1;
+      }
+    }
   }
-  return r1(maxThighAngle);
+
+  return { angle: r1(maxThighAngle), framesTotal: frames.length, framesStraightKnee, engagedAtIndex, stoppedAtIndex };
+}
+
+export function extractAslrAngle(frames: PoseFrame[]): number {
+  if (frames.length === 0) throw new Error('extractAslrAngle: aucune frame fournie');
+  return computeAslrTrace(frames).angle;
+}
+
+// Diagnostic exposé à l'écran (cf. App.jsx) pour comprendre à distance ce qui se passe sur
+// un vrai appareil, faute de pouvoir faire tourner PoseLandmarker dans ce sandbox.
+export function extractAslrAngleTrace(frames: PoseFrame[]): AslrTrace {
+  if (frames.length === 0) throw new Error('extractAslrAngle: aucune frame fournie');
+  return computeAslrTrace(frames);
 }
 
 // ---------- pFSA depuis un masque de silhouette calibré ----------

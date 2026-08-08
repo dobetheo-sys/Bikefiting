@@ -3,19 +3,103 @@
 // <video> caché hors-DOM, pour nourrir PoseLandmarker.detectForVideo() image par image.
 //
 // Browser-only (HTMLVideoElement, URL.createObjectURL) — aucun test node:test possible
-// ici (pas de DOM). À vérifier sur un vrai appareil avec une vraie vidéo profil
-// (cf. HANDOFF_CLAUDE_CODE.md, tâche 3) : que le seek/lecture frame-par-frame ne dérive
-// pas trop sur les codecs vidéo réellement produits par MediaRecorder sur mobile.
+// ici (pas de DOM).
+//
+// Bug réel trouvé sur un vrai vidéo ASLR (retour terrain, 08/08/2026) : `video.currentTime
+// = t` sur un webm produit par MediaRecorder ne seek pas réellement — `onseeked` se
+// déclenche mais currentTime reste bloqué à 0 pour TOUTES les cibles (confirmé en rejouant
+// exactement cette boucle contre le fichier réel dans Chromium : 40/40 échantillons à
+// 0.00s). Ce webm n'a pas d'index Cues/SeekHead (MediaRecorder n'en écrit pas), donc le
+// seek vers un temps arbitraire n'est pas fiable. Résultat observé : angle ASLR = 0
+// (toutes les frames analysées étaient en fait la même, prise avant le mouvement).
+// Remplacé par un échantillonnage en lecture réelle via `requestVideoFrameCallback` (vraies
+// frames décodées dans l'ordre, pas de seek) — repli sur l'ancienne méthode par seek si
+// l'API n'est pas supportée (mieux que rien, régression possible sur ces navigateurs précis).
 
 export interface SampledFrame {
   video: HTMLVideoElement;
   timestampMs: number;
 }
 
+export interface SampleVideoFramesOptions {
+  // Accélère la lecture pendant l'échantillonnage (retour terrain : l'analyse en lecture
+  // temps réel d'une vidéo de 15-20s se sentait très longue). requestVideoFrameCallback
+  // continue de livrer de vraies frames décodées à un rythme accéléré — vérifié à 4x contre
+  // un fichier réel (39/39 échantillons toujours à des temps distincts et corrects, ~4x plus
+  // rapide). Pas poussé plus haut par prudence : le traitement par frame (inférence pose,
+  // pas juste ce test) est plus lourd que ce sampling seul et pourrait ne pas suivre sur un
+  // appareil bas de gamme.
+  playbackRate?: number;
+  onProgress?: (done: number, total: number) => void;
+}
+
+function sampleByPlayback(
+  video: HTMLVideoElement,
+  duration: number,
+  sampleCount: number,
+  onFrame: (frame: SampledFrame) => void,
+  options: SampleVideoFramesOptions
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const steps = Math.max(1, sampleCount - 1);
+    let nextIndex = 0;
+    video.playbackRate = options.playbackRate ?? 1;
+
+    function cleanup() {
+      video.removeEventListener('ended', onEnded);
+      video.pause();
+    }
+    function onEnded() {
+      // Vidéo plus courte que prévu ou dernière cible jamais atteinte pile : on prend ce
+      // qu'on a plutôt que de bloquer indéfiniment.
+      cleanup();
+      resolve();
+    }
+    function step(_now: number, metadata: VideoFrameCallbackMetadata) {
+      const t = metadata.mediaTime;
+      while (nextIndex < sampleCount && t >= (nextIndex / steps) * duration) {
+        onFrame({ video, timestampMs: Math.round(t * 1000) });
+        nextIndex += 1;
+        options.onProgress?.(nextIndex, sampleCount);
+      }
+      if (nextIndex >= sampleCount) {
+        cleanup();
+        resolve();
+        return;
+      }
+      video.requestVideoFrameCallback(step);
+    }
+
+    video.addEventListener('ended', onEnded);
+    video.requestVideoFrameCallback(step);
+    video.play().catch(reject);
+  });
+}
+
+async function sampleBySeeking(
+  video: HTMLVideoElement,
+  duration: number,
+  sampleCount: number,
+  onFrame: (frame: SampledFrame) => void,
+  options: SampleVideoFramesOptions
+): Promise<void> {
+  const steps = Math.max(1, sampleCount - 1);
+  for (let i = 0; i < sampleCount; i++) {
+    const t = (i / steps) * duration;
+    await new Promise<void>((resolve) => {
+      video.onseeked = () => resolve();
+      video.currentTime = t;
+    });
+    onFrame({ video, timestampMs: Math.round(t * 1000) });
+    options.onProgress?.(i + 1, sampleCount);
+  }
+}
+
 export async function sampleVideoFrames(
   blob: Blob,
   sampleCount: number,
-  onFrame: (frame: SampledFrame) => void
+  onFrame: (frame: SampledFrame) => void,
+  options: SampleVideoFramesOptions = {}
 ): Promise<void> {
   const url = URL.createObjectURL(blob);
   const video = document.createElement('video');
@@ -35,14 +119,10 @@ export async function sampleVideoFrames(
       throw new Error('sampleVideoFrames: durée vidéo invalide ou non disponible');
     }
 
-    const steps = Math.max(1, sampleCount - 1);
-    for (let i = 0; i < sampleCount; i++) {
-      const t = (i / steps) * duration;
-      await new Promise<void>((resolve) => {
-        video.onseeked = () => resolve();
-        video.currentTime = t;
-      });
-      onFrame({ video, timestampMs: Math.round(t * 1000) });
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      await sampleByPlayback(video, duration, sampleCount, onFrame, options);
+    } else {
+      await sampleBySeeking(video, duration, sampleCount, onFrame, options);
     }
   } finally {
     URL.revokeObjectURL(url);
