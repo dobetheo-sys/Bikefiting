@@ -68,9 +68,10 @@ function initialStageFor(saved) {
 // justification du facteur retenu.
 const SAMPLING_PLAYBACK_RATE = 4;
 
-async function samplePoseFramesFromVideo(blob, sampleCount, onProgress) {
+async function samplePoseFramesFromVideo(blob, sampleCount, onProgress, onModelReady) {
   const fileset = await getVisionFileset();
   const landmarker = await createBikeFitPoseLandmarker(fileset);
+  onModelReady?.();
   try {
     const frames = [];
     await sampleVideoFrames(
@@ -89,16 +90,16 @@ async function samplePoseFramesFromVideo(blob, sampleCount, onProgress) {
   }
 }
 
-async function processAslrVideo(blob, onProgress) {
-  const frames = await samplePoseFramesFromVideo(blob, ASLR_SAMPLE_COUNT, onProgress);
+async function processAslrVideo(blob, onProgress, onModelReady) {
+  const frames = await samplePoseFramesFromVideo(blob, ASLR_SAMPLE_COUNT, onProgress, onModelReady);
   if (frames.length === 0) {
     throw new Error("Aucune pose détectée sur la vidéo du test de souplesse — vérifie le cadrage (hanche et jambe entières visibles).");
   }
   return extractAslrAngleTrace(frames);
 }
 
-async function processProfileVideoTrial(blob, onProgress) {
-  const frames = await samplePoseFramesFromVideo(blob, TRIAL_SAMPLE_COUNT, onProgress);
+async function processProfileVideoTrial(blob, onProgress, onModelReady) {
+  const frames = await samplePoseFramesFromVideo(blob, TRIAL_SAMPLE_COUNT, onProgress, onModelReady);
   if (frames.length === 0) {
     throw new Error("Aucune pose détectée sur la vidéo — vérifie le cadrage (corps entier visible) et l'éclairage.");
   }
@@ -674,10 +675,20 @@ export default function App() {
   const handleAslrCaptured = useCallback(
     async (payload) => {
       if (!payload.blob) return fail(new Error('Capture invalide : aucune donnée récupérée.'));
-      setBusy('Analyse du test de souplesse…');
+      // Le chargement du modèle d'analyse (~10-20 Mo, premier appel de la session) peut
+      // prendre du temps sur une connexion mobile lente, sans aucune progression mesurable
+      // pendant ce temps — un libellé figé "Analyse…" pendant 30s donnait l'impression que
+      // l'appli était plantée (retour terrain : "plus d'écran d'attente"). On distingue donc
+      // les deux phases : chargement du modèle (spinner seul) puis analyse (barre de
+      // progression par image).
+      setBusy('Chargement du modèle d’analyse…');
       setBusyProgress(null);
       try {
-        const trace = await processAslrVideo(payload.blob, (current, total) => setBusyProgress({ current, total }));
+        const trace = await processAslrVideo(
+          payload.blob,
+          (current, total) => setBusyProgress({ current, total }),
+          () => setBusy('Analyse du test de souplesse…')
+        );
         setAslrAngle(trace.angle);
         setAslrTrace(trace);
         setBusy(null);
@@ -731,10 +742,14 @@ export default function App() {
   const handleTrialVideoCaptured = useCallback(
     async (payload) => {
       if (!payload.blob) return fail(new Error('Capture invalide : aucune donnée récupérée.'));
-      setBusy('Analyse de la vidéo profil…');
+      setBusy('Chargement du modèle d’analyse…');
       setBusyProgress(null);
       try {
-        const angles = await processProfileVideoTrial(payload.blob, (current, total) => setBusyProgress({ current, total }));
+        const angles = await processProfileVideoTrial(
+          payload.blob,
+          (current, total) => setBusyProgress({ current, total }),
+          () => setBusy('Analyse de la vidéo profil…')
+        );
         setPendingTrial((prev) => ({ ...prev, angles }));
         setBusy(null);
         setStage('trial-overview');
