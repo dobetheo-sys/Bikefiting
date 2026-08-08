@@ -5,7 +5,7 @@ import { getVisionFileset } from './capture/mediapipe-vision';
 import { createBikeFitSegmenter, toBikeFitBinaryMask } from './capture/segmentation-integration';
 import { createBikeFitPoseLandmarker, toPoseFrame } from './capture/pose-integration';
 import { sampleVideoFrames } from './capture/video-frame-sampler';
-import { computePFSA_cm2, extractTrialAngles, extractAslrAngle } from './capture/capture-processing';
+import { computePFSA_cm2, extractTrialAngles, extractAslrAngleTrace } from './capture/capture-processing';
 import { aslrToFlexScore, runEngine } from './engine/posture-aero-engine';
 
 // App.jsx — orchestre toute la session : test de souplesse (ASLR) -> profil athlète ->
@@ -73,7 +73,7 @@ async function processAslrVideo(blob, onProgress) {
   if (frames.length === 0) {
     throw new Error("Aucune pose détectée sur la vidéo du test de souplesse — vérifie le cadrage (hanche et jambe entières visibles).");
   }
-  return extractAslrAngle(frames);
+  return extractAslrAngleTrace(frames);
 }
 
 async function processProfileVideoTrial(blob, onProgress) {
@@ -167,7 +167,7 @@ function NumberField({ label, value, onChange, suffix, required }) {
   );
 }
 
-function ProfileForm({ aslrAngle, onSubmit }) {
+function ProfileForm({ aslrAngle, aslrTrace, onSubmit }) {
   const [heightCm, setHeightCm] = useState('178');
   const [raceDurationHours, setRaceDurationHours] = useState('2.5');
   const flexScore = aslrToFlexScore(aslrAngle);
@@ -188,6 +188,13 @@ function ProfileForm({ aslrAngle, onSubmit }) {
           <p className="text-xs text-neutral-500 mt-2">
             Score de souplesse : {flexScore}/5 (seuil clinique de tightness = 80°, cf. spec §3.1).
           </p>
+          {aslrTrace && (
+            <p className="text-[11px] text-neutral-600 mt-3" style={{ fontFamily: 'ui-monospace, monospace' }}>
+              debug · {aslrTrace.framesStraightKnee}/{aslrTrace.framesTotal} images genou droit ·
+              {' '}engagé image #{aslrTrace.engagedAtIndex ?? '—'} ·
+              {' '}arrêt image #{aslrTrace.stoppedAtIndex ?? 'fin vidéo'}
+            </p>
+          )}
         </div>
 
         <div className="space-y-4 mb-6">
@@ -376,6 +383,7 @@ export default function App() {
   const [persisted] = useState(() => loadPersistedSession());
   const [stage, setStage] = useState(() => initialStageFor(persisted));
   const [aslrAngle, setAslrAngle] = useState(() => persisted?.aslrAngle ?? null);
+  const [aslrTrace, setAslrTrace] = useState(null);
   const [profile, setProfile] = useState(() => persisted?.profile ?? null);
   const [athleteHeightCm, setAthleteHeightCm] = useState(() => persisted?.athleteHeightCm ?? null);
   const [trials, setTrials] = useState(() => persisted?.trials ?? []);
@@ -401,6 +409,7 @@ export default function App() {
       // ignoré
     }
     setAslrAngle(null);
+    setAslrTrace(null);
     setProfile(null);
     setAthleteHeightCm(null);
     setTrials([]);
@@ -427,8 +436,9 @@ export default function App() {
       setBusy('Analyse du test de souplesse…');
       setBusyProgress(null);
       try {
-        const angle = await processAslrVideo(payload.blob, (current, total) => setBusyProgress({ current, total }));
-        setAslrAngle(angle);
+        const trace = await processAslrVideo(payload.blob, (current, total) => setBusyProgress({ current, total }));
+        setAslrAngle(trace.angle);
+        setAslrTrace(trace);
         setBusy(null);
         setStage('profile-form');
       } catch (e) {
@@ -516,7 +526,7 @@ export default function App() {
     case 'aslr-capture':
       return <PostureCaptureFlow key="aslr" initialMode="aslr_test" onCaptured={handleAslrCaptured} />;
     case 'profile-form':
-      return <ProfileForm aslrAngle={aslrAngle} onSubmit={handleProfileSubmit} />;
+      return <ProfileForm aslrAngle={aslrAngle} aslrTrace={aslrTrace} onSubmit={handleProfileSubmit} />;
     case 'trial-video':
       return <PostureCaptureFlow key={`tv-${captureKey}`} initialMode="profile_video" onCaptured={handleTrialVideoCaptured} />;
     case 'trial-photo':

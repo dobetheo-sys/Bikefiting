@@ -142,8 +142,28 @@ const KNEE_STRAIGHT_THRESHOLD = 165; // sous ce seuil, le genou est considéré 
 // ait plié n'est pas retenu").
 const RAISE_ENGAGED_THRESHOLD_DEG = 15;
 
-export function extractAslrAngle(frames: PoseFrame[]): number {
-  if (frames.length === 0) throw new Error('extractAslrAngle: aucune frame fournie');
+// Retour terrain (08/08/2026, suite) : même après le fix ci-dessus, la même vidéo réelle
+// redonnait le même angle sous-estimé (18.9°) — donc l'armement se déclenchait quand même
+// trop tôt. Hypothèse la plus probable (non confirmée par des données réelles : le sandbox
+// de dev ne peut pas télécharger le modèle MediaPipe, cf. limite d'environnement — vérifiable
+// seulement via le téléphone de l'utilisateur) : la phase d'installation en gros plan flou
+// (cf. capture d'écran) donne des landmarks bruités qui peuvent franchir le seuil de 15° sur
+// UNE frame par hasard. On exige maintenant plusieurs frames straight-knee consécutives
+// au-dessus du seuil avant d'armer, pour filtrer un faux positif isolé. Reste un choix
+// d'ingénierie non validé sur vraies données — voir extractAslrAngleTrace() ci-dessous,
+// exposée pour afficher un diagnostic à l'écran et confirmer/infirmer sur le prochain test
+// réel (ce sandbox ne peut pas faire tourner PoseLandmarker pour vérifier autrement).
+const ENGAGE_STREAK_FRAMES = 3;
+
+export interface AslrTrace {
+  angle: number;
+  framesTotal: number;
+  framesStraightKnee: number;
+  engagedAtIndex: number | null;
+  stoppedAtIndex: number | null; // null si jamais de genou plié après l'armement (fin de vidéo)
+}
+
+function computeAslrTrace(frames: PoseFrame[]): AslrTrace {
   const side = pickSide(frames);
   const S =
     side === 'RIGHT'
@@ -152,20 +172,48 @@ export function extractAslrAngle(frames: PoseFrame[]): number {
 
   let maxThighAngle = 0;
   let raiseEngaged = false;
-  for (const f of frames) {
-    const lm = f.landmarks;
+  let engageStreak = 0;
+  let framesStraightKnee = 0;
+  let engagedAtIndex: number | null = null;
+  let stoppedAtIndex: number | null = null;
+
+  for (let i = 0; i < frames.length; i++) {
+    const lm = frames[i].landmarks;
     const kneeAngle = angleAt(lm[S.HIP], lm[S.KNEE], lm[S.ANKLE]);
     if (Number.isNaN(kneeAngle) || kneeAngle < KNEE_STRAIGHT_THRESHOLD) {
-      if (raiseEngaged) break; // genou qui plie après le début de la levée -> fin de la mesure valide
-      continue; // genou plié avant que la levée commence (installation) -> ignoré
+      if (raiseEngaged) {
+        stoppedAtIndex = i; // genou qui plie après le début de la levée -> fin de la mesure valide
+        break;
+      }
+      engageStreak = 0; // genou plié avant que la levée commence (installation) -> ignoré
+      continue;
     }
+    framesStraightKnee++;
     const thighAngle = angleVsHorizontal(lm[S.HIP], lm[S.KNEE]);
-    if (!Number.isNaN(thighAngle)) {
-      maxThighAngle = Math.max(maxThighAngle, thighAngle);
-      if (thighAngle >= RAISE_ENGAGED_THRESHOLD_DEG) raiseEngaged = true;
+    if (Number.isNaN(thighAngle)) continue;
+    maxThighAngle = Math.max(maxThighAngle, thighAngle);
+    if (!raiseEngaged) {
+      engageStreak = thighAngle >= RAISE_ENGAGED_THRESHOLD_DEG ? engageStreak + 1 : 0;
+      if (engageStreak >= ENGAGE_STREAK_FRAMES) {
+        raiseEngaged = true;
+        engagedAtIndex = i - ENGAGE_STREAK_FRAMES + 1;
+      }
     }
   }
-  return r1(maxThighAngle);
+
+  return { angle: r1(maxThighAngle), framesTotal: frames.length, framesStraightKnee, engagedAtIndex, stoppedAtIndex };
+}
+
+export function extractAslrAngle(frames: PoseFrame[]): number {
+  if (frames.length === 0) throw new Error('extractAslrAngle: aucune frame fournie');
+  return computeAslrTrace(frames).angle;
+}
+
+// Diagnostic exposé à l'écran (cf. App.jsx) pour comprendre à distance ce qui se passe sur
+// un vrai appareil, faute de pouvoir faire tourner PoseLandmarker dans ce sandbox.
+export function extractAslrAngleTrace(frames: PoseFrame[]): AslrTrace {
+  if (frames.length === 0) throw new Error('extractAslrAngle: aucune frame fournie');
+  return computeAslrTrace(frames);
 }
 
 // ---------- pFSA depuis un masque de silhouette calibré ----------
