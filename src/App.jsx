@@ -1,5 +1,18 @@
 import { useState, useCallback, useEffect } from 'react';
-import { RotateCcw, Loader2, AlertTriangle, Plus, ArrowRight } from 'lucide-react';
+import {
+  RotateCcw,
+  Loader2,
+  AlertTriangle,
+  Plus,
+  ArrowRight,
+  Smartphone,
+  Bike,
+  Ruler,
+  Sun,
+  ShieldCheck,
+  Timer,
+  CheckCircle2,
+} from 'lucide-react';
 import PostureCaptureFlow from './components/PostureCaptureFlow.jsx';
 import { getVisionFileset } from './capture/mediapipe-vision';
 import { createBikeFitSegmenter, toBikeFitBinaryMask } from './capture/segmentation-integration';
@@ -36,7 +49,7 @@ function loadPersistedSession() {
 }
 
 function initialStageFor(saved) {
-  if (!saved) return 'aslr-capture';
+  if (!saved) return 'welcome';
   if ((saved.trials && saved.trials.length > 0) || saved.profile) return 'session';
   // Ne PAS reprendre sur 'profile-form' juste parce qu'un aslrAngle est sauvegardé : ça
   // pouvait coincer l'utilisateur sur un vieux résultat (parfois faux, avant un correctif)
@@ -148,6 +161,124 @@ function ErrorScreen({ message, onRetry }) {
         </button>
       </div>
     </Shell>
+  );
+}
+
+function StepCard({ icon: Icon, step, title, duration, children, accent }) {
+  return (
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 flex gap-4">
+      <div
+        className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold ${accent}`}
+        style={{ fontFamily: 'ui-monospace, monospace' }}
+      >
+        {step}
+      </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <Icon className="w-4 h-4 text-neutral-400 shrink-0" />
+          <h3 className="font-medium text-neutral-100">{title}</h3>
+        </div>
+        <p className="text-sm text-neutral-400 leading-relaxed">{children}</p>
+        {duration && (
+          <div className="flex items-center gap-1.5 mt-2 text-xs text-neutral-600" style={{ fontFamily: 'ui-monospace, monospace' }}>
+            <Timer className="w-3 h-3" /> {duration}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GearItem({ icon: Icon, title, children }) {
+  return (
+    <div className="flex gap-3 py-3 border-b border-neutral-800 last:border-b-0">
+      <Icon className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+      <div className="min-w-0">
+        <div className="text-sm text-neutral-200">{title}</div>
+        <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{children}</p>
+      </div>
+    </div>
+  );
+}
+
+function WelcomeScreen({ onStart }) {
+  // h-screen (pas min-h-screen comme Shell) : contenu plus long qu'un écran, le bouton
+  // "Commencer" doit rester ancré en bas et visible sans avoir à tout faire défiler
+  // d'abord — Shell est partagé par des écrans qui, eux, comptent sur min-h-screen.
+  return (
+    <div
+      className="w-full h-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden"
+      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
+    >
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-6 pt-10 pb-8 max-w-md mx-auto w-full">
+          <div className="text-xs tracking-widest text-amber-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
+            Bilan posture aéro
+          </div>
+          <h1 className="text-2xl font-semibold text-neutral-100 leading-snug mb-2">Avant de commencer</h1>
+          <p className="text-neutral-400 text-sm leading-relaxed mb-8">
+            Compte 10-15 minutes, seul avec ton vélo et ton téléphone. Voici exactement ce qui va se passer et ce qu'il te faut.
+          </p>
+
+          <h2 className="text-xs tracking-widest text-neutral-500 uppercase mb-3" style={{ fontFamily: 'ui-monospace, monospace' }}>
+            Le déroulé
+          </h2>
+          <div className="space-y-3 mb-8">
+            <StepCard icon={Ruler} step="1" title="Test de souplesse" duration="~1 min" accent="bg-cyan-400/10 text-cyan-300">
+              Allongé au sol, tu lèves une jambe tendue le plus haut possible. Ça calibre la limite de fermeture de
+              hanche que ta position sur le vélo doit respecter — sans ça, impossible de scorer tes essais.
+            </StepCard>
+            <StepCard icon={Bike} step="2" title="Essais sur le vélo" duration="~2-3 min par essai" accent="bg-amber-400/10 text-amber-300">
+              Pour chaque réglage que tu veux comparer (hauteur de selle, reach, drop…) : une courte vidéo de profil
+              en pédalant, puis une photo de face avec étalonnage. Répète pour au moins 3 essais différents.
+            </StepCard>
+            <StepCard icon={CheckCircle2} step="3" title="Résultats" accent="bg-pink-400/10 text-pink-300">
+              Un score confort et un score aéro pour chaque essai, et une sélection automatique de tes 3 meilleures
+              positions : confort max, équilibré, aéro max.
+            </StepCard>
+          </div>
+
+          <h2 className="text-xs tracking-widest text-neutral-500 uppercase mb-3" style={{ fontFamily: 'ui-monospace, monospace' }}>
+            Matériel nécessaire
+          </h2>
+          <div className="rounded-lg border border-neutral-800 bg-neutral-900 px-4 mb-8">
+            <GearItem icon={Smartphone} title="Un smartphone avec appareil photo">
+              Celui que tu utilises là, ça marche.
+            </GearItem>
+            <GearItem icon={ShieldCheck} title="Un support fixe pour le poser">
+              Trépied, étagère, pile de livres — mains libres obligatoire, il faut une vue stable pendant l'enregistrement.
+            </GearItem>
+            <GearItem icon={Bike} title="Ton vélo">
+              Idéalement sur un home-trainer ; sinon calé à l'arrêt, bien stable.
+            </GearItem>
+            <GearItem icon={Ruler} title="Un repère de longueur connue">
+              Visible sur la photo de face (largeur de ton cintre, un mètre ruban…) — sert à étalonner les mesures.
+            </GearItem>
+            <GearItem icon={Sun} title="Un peu d'espace et de lumière">
+              De quoi te voir en entier de profil sur le vélo, et une lumière correcte, pas de contre-jour.
+            </GearItem>
+          </div>
+
+          <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-4 mb-8">
+            <p className="text-xs text-neutral-500 leading-relaxed">
+              Méthode basée sur un protocole terrain publié (Debraux et al. 2009) pour la mesure de surface frontale,
+              et sur le test clinique ASLR pour la souplesse de hanche — pas juste une estimation à l'œil.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-6 py-5 border-t border-neutral-800 bg-neutral-950">
+        <div className="max-w-md mx-auto w-full">
+          <button
+            onClick={onStart}
+            className="w-full py-3.5 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200 flex items-center justify-center gap-2"
+          >
+            Commencer le bilan <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -540,6 +671,8 @@ export default function App() {
   if (busy) return <Busy label={busy} progress={busyProgress} />;
 
   switch (stage) {
+    case 'welcome':
+      return <WelcomeScreen onStart={() => setStage('aslr-capture')} />;
     case 'aslr-capture':
       return <PostureCaptureFlow key="aslr" initialMode="aslr_test" onCaptured={handleAslrCaptured} />;
     case 'profile-form':
