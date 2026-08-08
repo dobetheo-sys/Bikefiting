@@ -657,7 +657,7 @@ export default function App() {
     setPendingTrial(null);
     setResult(null);
     setError(null);
-    setStage('aslr-capture');
+    setStage('welcome');
   }, []);
 
   const fail = useCallback((e) => {
