@@ -208,12 +208,17 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
 
   const startLiveVideoCapture = () => startCamera(mode, { live: true });
 
+  // Dépend aussi de videoCaptureUi, pas seulement de screen : pour les modes vidéo,
+  // screen vaut déjà 'camera' pendant l'étape import (checklist + bouton "Choisir la
+  // vidéo") — passer en filmage direct ne fait basculer que videoCaptureUi ('import' ->
+  // 'live'), pas screen. Sans cette dépendance, l'effet ne se redéclenchait jamais : le
+  // <video> se montait bien mais sans flux attaché (aperçu noir, "ne marche pas").
   useEffect(() => {
-    if (screen === 'camera' && videoRef.current && streamRef.current) {
+    if (screen === 'camera' && videoCaptureUi === 'live' && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
       videoRef.current.play().catch(() => {});
     }
-  }, [screen]);
+  }, [screen, videoCaptureUi]);
 
   // Si initialMode est fourni, l'appelant pilote la séquence de capture (App.jsx) :
   // on saute l'écran de choix et on démarre directement la caméra pour ce mode.
