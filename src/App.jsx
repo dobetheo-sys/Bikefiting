@@ -15,7 +15,10 @@ import {
   Video,
   Camera,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Circle,
+  Lock,
 } from 'lucide-react';
 import PostureCaptureFlow from './components/PostureCaptureFlow.jsx';
 import { getVisionFileset } from './capture/mediapipe-vision';
@@ -93,7 +96,9 @@ async function samplePoseFramesFromVideo(blob, sampleCount, onProgress, onModelR
 async function processAslrVideo(blob, onProgress, onModelReady) {
   const frames = await samplePoseFramesFromVideo(blob, ASLR_SAMPLE_COUNT, onProgress, onModelReady);
   if (frames.length === 0) {
-    throw new Error("Aucune pose détectée sur la vidéo du test de souplesse — vérifie le cadrage (hanche et jambe entières visibles).");
+    throw new Error(
+      "On n'a pas réussi à te repérer sur cette vidéo. Vérifie que ta hanche et toute la jambe testée sont bien visibles à l'écran, puis réessaie."
+    );
   }
   return extractAslrAngleTrace(frames);
 }
@@ -101,7 +106,9 @@ async function processAslrVideo(blob, onProgress, onModelReady) {
 async function processProfileVideoTrial(blob, onProgress, onModelReady) {
   const frames = await samplePoseFramesFromVideo(blob, TRIAL_SAMPLE_COUNT, onProgress, onModelReady);
   if (frames.length === 0) {
-    throw new Error("Aucune pose détectée sur la vidéo — vérifie le cadrage (corps entier visible) et l'éclairage.");
+    throw new Error(
+      "On n'a pas réussi à te repérer sur cette vidéo. Vérifie que tout le corps est visible et qu'il y a assez de lumière, puis réessaie."
+    );
   }
   return extractTrialAngles(frames);
 }
@@ -139,9 +146,7 @@ function Busy({ label, progress }) {
         <p className="text-sm text-neutral-300 mb-4">{label}</p>
         {pct !== null && (
           <>
-            <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden">
-              <div className="h-full bg-amber-400 transition-[width] duration-150" style={{ width: `${pct}%` }} />
-            </div>
+            <ProgressBar value={progress.current} max={progress.total} />
             <p className="text-xs text-neutral-500 mt-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
               {progress.current}/{progress.total} images analysées · {pct}%
             </p>
@@ -156,8 +161,9 @@ function ErrorScreen({ message, onRetry }) {
   return (
     <Shell>
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center max-w-md mx-auto w-full">
-        <AlertTriangle className="w-8 h-8 text-red-400 mb-3" />
+        <AlertTriangle className="w-8 h-8 text-amber-400 mb-3" />
         <p className="text-neutral-200 text-sm">{message}</p>
+        <p className="text-xs text-neutral-500 mt-2">Pas de souci, ce que tu as déjà rempli est conservé.</p>
         <button
           onClick={onRetry}
           className="mt-6 flex items-center gap-2 py-3 px-5 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
@@ -166,6 +172,57 @@ function ErrorScreen({ message, onRetry }) {
         </button>
       </div>
     </Shell>
+  );
+}
+
+function ProgressBar({ value, max }) {
+  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
+  return (
+    <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden">
+      <div className="h-full bg-amber-400 transition-[width] duration-300" style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+function PrivacyNote({ className = '' }) {
+  return (
+    <div className={`flex items-start gap-2 text-xs text-neutral-500 ${className}`}>
+      <Lock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+      <span>Traité entièrement sur ton téléphone — aucune vidéo ni photo n’est envoyée en ligne.</span>
+    </div>
+  );
+}
+
+// Écrans "formulaire/liste" (profil, session, essai, réglages, résultats) : contenu
+// potentiellement plus long qu'un écran (liste d'essais qui grandit, checklist d'un
+// essai) — même pattern que WelcomeScreen (h-screen + zone scrollable + CTA ancré en
+// bas) plutôt que Shell/min-h-screen + centrage vertical, pour que le bouton principal
+// reste toujours atteignable sans avoir à scroller d'abord (retour d'audit ergonomique :
+// "CTA ancré en bas partout").
+function ScreenShell({ eyebrow, eyebrowColor = 'text-amber-400', title, subtitle, children, footer }) {
+  return (
+    <div
+      className="w-full h-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden"
+      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
+    >
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-6 pt-10 pb-8 max-w-md mx-auto w-full">
+          {eyebrow && (
+            <div className={`text-xs tracking-widest uppercase mb-2 ${eyebrowColor}`} style={{ fontFamily: 'ui-monospace, monospace' }}>
+              {eyebrow}
+            </div>
+          )}
+          {title && <h1 className="text-xl font-semibold mb-1">{title}</h1>}
+          {subtitle}
+          {children}
+        </div>
+      </div>
+      {footer && (
+        <div className="px-6 py-5 border-t border-neutral-800 bg-neutral-950">
+          <div className="max-w-md mx-auto w-full space-y-3">{footer}</div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -264,10 +321,19 @@ function WelcomeScreen({ onStart }) {
             </GearItem>
           </div>
 
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-4 mb-8">
+          <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-4 mb-4">
             <p className="text-xs text-neutral-500 leading-relaxed">
               Méthode basée sur un protocole terrain publié (Debraux et al. 2009) pour la mesure de surface frontale,
               et sur le test clinique ASLR pour la souplesse de hanche — pas juste une estimation à l'œil.
+            </p>
+          </div>
+
+          <PrivacyNote className="mb-4" />
+
+          <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-4 mb-8">
+            <p className="text-xs text-amber-200/80 leading-relaxed">
+              Cet outil ne remplace pas l'avis d'un bikefitter professionnel ni un avis médical. Arrête immédiatement
+              un mouvement si ça tire ou fait mal, en particulier pendant le test de souplesse.
             </p>
           </div>
         </div>
@@ -310,108 +376,141 @@ function NumberField({ label, value, onChange, suffix, required }) {
 function ProfileForm({ aslrAngle, aslrTrace, onSubmit, onRetakeAslr }) {
   const [heightCm, setHeightCm] = useState('178');
   const [raceDurationHours, setRaceDurationHours] = useState('2.5');
+  const [showDebug, setShowDebug] = useState(false);
   const flexScore = aslrToFlexScore(aslrAngle);
   const heightValid = Number(heightCm) > 0;
 
   return (
-    <Shell>
-      <div className="flex-1 flex flex-col justify-center px-6 py-10 max-w-md mx-auto w-full">
-        <div className="text-xs tracking-widest text-cyan-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-          Test de souplesse (ASLR)
+    <ScreenShell
+      eyebrow="Test de souplesse (ASLR)"
+      eyebrowColor="text-cyan-400"
+      title="Résultat"
+      footer={
+        <>
+          <button
+            onClick={() => onSubmit(Number(heightCm), raceDurationHours ? Number(raceDurationHours) : undefined)}
+            disabled={!heightValid}
+            className="w-full py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan-200 flex items-center justify-center gap-2"
+          >
+            Continuer <ArrowRight className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onRetakeAslr}
+            className="w-full flex items-center justify-center gap-2 py-2 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded"
+          >
+            <RotateCcw className="w-3.5 h-3.5" /> Refaire le test de souplesse
+          </button>
+        </>
+      }
+    >
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 mb-6 mt-4">
+        <div className="text-3xl font-semibold text-cyan-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+          {aslrAngle}°
         </div>
-        <h1 className="text-xl font-semibold mb-4">Résultat</h1>
-
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 mb-6">
-          <div className="text-3xl font-semibold text-cyan-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            {aslrAngle}°
-          </div>
-          <p className="text-xs text-neutral-500 mt-2">
-            Score de souplesse : {flexScore}/5 (seuil clinique de tightness = 80°, cf. spec §3.1).
-          </p>
-          {aslrTrace && (
-            <p className="text-[11px] text-neutral-600 mt-3" style={{ fontFamily: 'ui-monospace, monospace' }}>
-              debug · {aslrTrace.framesStraightKnee}/{aslrTrace.framesTotal} images genou droit ·
-              {' '}engagé image #{aslrTrace.engagedAtIndex ?? '—'} ·
-              {' '}arrêt image #{aslrTrace.stoppedAtIndex ?? 'fin vidéo'}
-            </p>
-          )}
-        </div>
-
-        <div className="space-y-4 mb-6">
-          <NumberField label="Ta taille" value={heightCm} onChange={setHeightCm} suffix="cm" required />
-          <NumberField label="Durée de course estimée" value={raceDurationHours} onChange={setRaceDurationHours} suffix="h" />
-        </div>
-
-        <button
-          onClick={() => onSubmit(Number(heightCm), raceDurationHours ? Number(raceDurationHours) : undefined)}
-          disabled={!heightValid}
-          className="py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan-200 flex items-center justify-center gap-2"
-        >
-          Continuer <ArrowRight className="w-4 h-4" />
-        </button>
-
-        <button
-          onClick={onRetakeAslr}
-          className="mt-4 flex items-center justify-center gap-2 py-2 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded"
-        >
-          <RotateCcw className="w-3.5 h-3.5" /> Refaire le test de souplesse
-        </button>
+        <p className="text-xs text-neutral-500 mt-2">
+          Score de souplesse : {flexScore}/5 (seuil clinique de tightness = 80°, cf. spec §3.1).
+        </p>
+        {aslrTrace && (
+          <>
+            <button
+              onClick={() => setShowDebug((v) => !v)}
+              className="flex items-center gap-1 text-[11px] text-neutral-600 mt-3 focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded"
+            >
+              Détails techniques {showDebug ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+            {showDebug && (
+              <p className="text-[11px] text-neutral-600 mt-1.5" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                {aslrTrace.framesStraightKnee}/{aslrTrace.framesTotal} images genou droit ·
+                {' '}engagé image #{aslrTrace.engagedAtIndex ?? '—'} ·
+                {' '}arrêt image #{aslrTrace.stoppedAtIndex ?? 'fin vidéo'}
+              </p>
+            )}
+          </>
+        )}
       </div>
-    </Shell>
+
+      <div className="space-y-4 mb-6">
+        <NumberField label="Ta taille" value={heightCm} onChange={setHeightCm} suffix="cm" required />
+        <NumberField label="Durée de course estimée" value={raceDurationHours} onChange={setRaceDurationHours} suffix="h" />
+      </div>
+    </ScreenShell>
   );
 }
 
 function SessionScreen({ profile, trials, onNewTrial, onAnalyze, onNewSession }) {
+  const minTrials = 3;
+  const remaining = Math.max(0, minTrials - trials.length);
+
   return (
-    <Shell>
-      <div className="flex-1 flex flex-col justify-center px-6 py-10 max-w-md mx-auto w-full">
-        <div className="text-xs tracking-widest text-amber-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-          Session
-        </div>
-        <h1 className="text-xl font-semibold mb-1">Tes essais</h1>
-        <p className="text-neutral-400 text-sm mb-1">
-          Souplesse {profile.hipFlexibilityScore}/5 · minimum 3 essais valides pour une frontière Pareto (spec §6).
-        </p>
-        <p className="text-neutral-600 text-xs mb-6">
-          Reprend automatiquement ici si tu quittes ou si le navigateur plante.
-        </p>
+    <ScreenShell
+      eyebrow="Session"
+      title="Tes essais"
+      footer={
+        <>
+          <button
+            onClick={onNewTrial}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          >
+            <Plus className="w-4 h-4" /> Nouvel essai
+          </button>
+          <button
+            onClick={onAnalyze}
+            disabled={trials.length === 0}
+            className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
+          >
+            Voir les résultats
+          </button>
+          <button
+            onClick={() => { if (confirm('Effacer cette session et repartir de zéro ?')) onNewSession(); }}
+            className="w-full text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+          >
+            Nouvelle session (efface tout)
+          </button>
+        </>
+      }
+    >
+      <p className="text-neutral-400 text-sm mb-3">Souplesse {profile.hipFlexibilityScore}/5</p>
 
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900 divide-y divide-neutral-800 mb-6">
-          {trials.length === 0 && <p className="text-sm text-neutral-500 p-4">Aucun essai enregistré pour l’instant.</p>}
-          {trials.map((t) => (
-            <div key={t.id} className="p-4 text-sm" style={{ fontFamily: 'ui-monospace, monospace' }}>
-              <div className="text-neutral-200">{t.id}</div>
-              <div className="text-xs text-neutral-500 mt-1">
-                hanche {t.angles.hip.mean}° · tronc {t.angles.trunk.mean}° · pFSA {t.frontal.pFSA_cm2} cm²
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <button
-          onClick={onNewTrial}
-          className="flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 mb-3 focus:outline-none focus:ring-2 focus:ring-amber-400"
-        >
-          <Plus className="w-4 h-4" /> Nouvel essai
-        </button>
-
-        <button
-          onClick={onAnalyze}
-          disabled={trials.length === 0}
-          className="py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
-        >
-          Voir les résultats
-        </button>
-
-        <button
-          onClick={() => { if (confirm('Effacer cette session et repartir de zéro ?')) onNewSession(); }}
-          className="mt-6 text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
-        >
-          Nouvelle session (efface tout)
-        </button>
+      <div className="mb-1">
+        <ProgressBar value={trials.length} max={minTrials} />
       </div>
-    </Shell>
+      <p className="text-xs text-neutral-500 mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+        {trials.length}/{minTrials} essais
+      </p>
+      <p className="text-neutral-500 text-xs mb-6">
+        {remaining > 0
+          ? `Encore ${remaining} essai${remaining > 1 ? 's' : ''} pour pouvoir comparer tes réglages et voir tes résultats.`
+          : 'Tu peux déjà voir tes résultats — ajoute d’autres essais pour affiner la comparaison.'}
+      </p>
+
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900 divide-y divide-neutral-800 mb-6">
+        {trials.length === 0 && <p className="text-sm text-neutral-500 p-4">Aucun essai enregistré pour l’instant.</p>}
+        {trials.map((t) => (
+          <div key={t.id} className="p-4 text-sm" style={{ fontFamily: 'ui-monospace, monospace' }}>
+            <div className="text-neutral-200">{t.id}</div>
+            <div className="text-xs text-neutral-500 mt-1">
+              hanche {t.angles.hip.mean}° · tronc {t.angles.trunk.mean}° · pFSA {t.frontal.pFSA_cm2} cm²
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-neutral-600 text-xs mb-6">
+        Reprend automatiquement ici si tu quittes ou si le navigateur plante.
+      </p>
+    </ScreenShell>
   );
+}
+
+function formatDelta(value) {
+  return `${value >= 0 ? '+' : ''}${value}mm`;
+}
+
+function formatDeltas(deltas) {
+  const parts = [`selle ${formatDelta(deltas.saddleHeightMm)}`];
+  if (deltas.saddleSetbackMm !== undefined) parts.push(`recul ${formatDelta(deltas.saddleSetbackMm)}`);
+  parts.push(`reach ${formatDelta(deltas.reachMm)}`, `drop ${formatDelta(deltas.dropMm)}`);
+  return parts.join(' · ');
 }
 
 function TrialStepRow({ icon: Icon, title, consigne, done, summary, onClick }) {
@@ -443,102 +542,110 @@ function TrialOverview({ trialNumber, pendingTrial, onOpenVideo, onOpenPhoto, on
   const allDone = doneCount === 3;
 
   return (
-    <Shell>
-      <div className="flex-1 flex flex-col justify-center px-6 py-10 max-w-md mx-auto w-full">
-        <div className="text-xs tracking-widest text-amber-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-          Essai {trialNumber}
-        </div>
-        <h1 className="text-xl font-semibold mb-1">3 étapes à compléter</h1>
-        <p className="text-neutral-400 text-sm mb-6" style={{ fontFamily: 'ui-monospace, monospace' }}>
-          {doneCount}/3 complétées
-        </p>
-
-        <div className="space-y-3 mb-8">
-          <TrialStepRow
-            icon={Video}
-            title="Vidéo profil"
-            consigne="Vue de profil sur le vélo, en pédalant"
-            done={videoDone}
-            summary={videoDone ? `hanche ${pendingTrial.angles.hip.mean}° · tronc ${pendingTrial.angles.trunk.mean}°` : ''}
-            onClick={onOpenVideo}
-          />
-          <TrialStepRow
-            icon={Camera}
-            title="Photo frontale"
-            consigne="Vue de face, avec étalonnage"
-            done={photoDone}
-            summary={photoDone ? `pFSA ${pendingTrial.frontal.pFSA_cm2} cm²` : ''}
-            onClick={onOpenPhoto}
-          />
-          <TrialStepRow
-            icon={Ruler}
-            title="Réglages du vélo"
-            consigne="Hauteur de selle / reach / drop"
-            done={deltasDone}
-            summary={
-              deltasDone
-                ? `selle ${pendingTrial.deltas.saddleHeightMm >= 0 ? '+' : ''}${pendingTrial.deltas.saddleHeightMm}mm · reach ${pendingTrial.deltas.reachMm >= 0 ? '+' : ''}${pendingTrial.deltas.reachMm}mm · drop ${pendingTrial.deltas.dropMm >= 0 ? '+' : ''}${pendingTrial.deltas.dropMm}mm`
-                : ''
-            }
-            onClick={onOpenDeltas}
-          />
-        </div>
-
-        <button
-          onClick={onSave}
-          disabled={!allDone}
-          className="py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
-        >
-          Enregistrer cet essai
-        </button>
-
-        <button
-          onClick={onCancel}
-          className="mt-4 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
-        >
-          Annuler cet essai
-        </button>
+    <ScreenShell
+      eyebrow={`Essai ${trialNumber}`}
+      title="3 étapes à compléter"
+      footer={
+        <>
+          <button
+            onClick={onSave}
+            disabled={!allDone}
+            className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
+          >
+            Enregistrer cet essai
+          </button>
+          <button
+            onClick={onCancel}
+            className="w-full text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+          >
+            Annuler cet essai
+          </button>
+        </>
+      }
+    >
+      <div className="mb-1 mt-3">
+        <ProgressBar value={doneCount} max={3} />
       </div>
-    </Shell>
+      <p className="text-neutral-400 text-sm mb-6" style={{ fontFamily: 'ui-monospace, monospace' }}>
+        {doneCount}/3 complétées
+      </p>
+
+      <div className="space-y-3 mb-8">
+        <TrialStepRow
+          icon={Video}
+          title="Vidéo profil"
+          consigne="Vue de profil sur le vélo, en pédalant"
+          done={videoDone}
+          summary={videoDone ? `hanche ${pendingTrial.angles.hip.mean}° · tronc ${pendingTrial.angles.trunk.mean}°` : ''}
+          onClick={onOpenVideo}
+        />
+        <TrialStepRow
+          icon={Camera}
+          title="Photo frontale"
+          consigne="Vue de face, avec étalonnage"
+          done={photoDone}
+          summary={photoDone ? `pFSA ${pendingTrial.frontal.pFSA_cm2} cm²` : ''}
+          onClick={onOpenPhoto}
+        />
+        <TrialStepRow
+          icon={Ruler}
+          title="Réglages du vélo"
+          consigne="Hauteur/recul de selle, reach, drop"
+          done={deltasDone}
+          summary={deltasDone ? formatDeltas(pendingTrial.deltas) : ''}
+          onClick={onOpenDeltas}
+        />
+      </div>
+    </ScreenShell>
   );
 }
 
 function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
   const [saddleHeightMm, setSaddleHeightMm] = useState(String(initialDeltas?.saddleHeightMm ?? 0));
+  const [saddleSetbackMm, setSaddleSetbackMm] = useState(String(initialDeltas?.saddleSetbackMm ?? 0));
   const [reachMm, setReachMm] = useState(String(initialDeltas?.reachMm ?? 0));
   const [dropMm, setDropMm] = useState(String(initialDeltas?.dropMm ?? 0));
 
   return (
-    <Shell>
-      <div className="flex-1 flex flex-col justify-center px-6 py-10 max-w-md mx-auto w-full">
-        <div className="text-xs tracking-widest text-amber-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-          Réglages du vélo
-        </div>
-        <h1 className="text-xl font-semibold mb-1">Qu’as-tu changé sur le vélo ?</h1>
+    <ScreenShell
+      eyebrow="Réglages du vélo"
+      title="Qu’as-tu changé sur le vélo ?"
+      subtitle={
         <p className="text-neutral-400 text-sm mb-6">Par rapport à ton réglage de référence (0 si c’est le premier essai).</p>
-
-        <div className="space-y-4 mb-8">
-          <NumberField label="Hauteur de selle" value={saddleHeightMm} onChange={setSaddleHeightMm} suffix="mm" />
-          <NumberField label="Reach" value={reachMm} onChange={setReachMm} suffix="mm" />
-          <NumberField label="Drop" value={dropMm} onChange={setDropMm} suffix="mm" />
-        </div>
-
-        <button
-          onClick={() =>
-            onSubmit({ saddleHeightMm: Number(saddleHeightMm), reachMm: Number(reachMm), dropMm: Number(dropMm) })
-          }
-          className="py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200"
-        >
-          Valider ces réglages
-        </button>
-
-        {onCancel && (
-          <button onClick={onCancel} className="mt-4 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
-            Annuler
+      }
+      footer={
+        <>
+          <button
+            onClick={() =>
+              onSubmit({
+                saddleHeightMm: Number(saddleHeightMm),
+                saddleSetbackMm: Number(saddleSetbackMm),
+                reachMm: Number(reachMm),
+                dropMm: Number(dropMm),
+              })
+            }
+            className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200"
+          >
+            Valider ces réglages
           </button>
-        )}
+          {onCancel && (
+            <button onClick={onCancel} className="w-full text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
+              Annuler
+            </button>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-4 mb-8">
+        <NumberField label="Hauteur de selle" value={saddleHeightMm} onChange={setSaddleHeightMm} suffix="mm" />
+        <NumberField label="Recul de selle" value={saddleSetbackMm} onChange={setSaddleSetbackMm} suffix="mm" />
+        <NumberField label="Reach" value={reachMm} onChange={setReachMm} suffix="mm" />
+        <NumberField label="Drop" value={dropMm} onChange={setDropMm} suffix="mm" />
       </div>
-    </Shell>
+      <p className="text-xs text-neutral-500 -mt-4 mb-6">
+        Idéalement, change un seul réglage à la fois entre deux essais — c'est le seul moyen de savoir lequel a fait la différence.
+      </p>
+    </ScreenShell>
   );
 }
 
@@ -563,10 +670,7 @@ function ProfileCard({ title, accent, profile }) {
         </div>
       </div>
       <div className="text-xs text-neutral-500" style={{ fontFamily: 'ui-monospace, monospace' }}>
-        selle {profile.deltas.saddleHeightMm >= 0 ? '+' : ''}
-        {profile.deltas.saddleHeightMm}mm · reach {profile.deltas.reachMm >= 0 ? '+' : ''}
-        {profile.deltas.reachMm}mm · drop {profile.deltas.dropMm >= 0 ? '+' : ''}
-        {profile.deltas.dropMm}mm
+        {formatDeltas(profile.deltas)}
       </div>
       {profile.warnings.length > 0 && (
         <div className="text-xs text-amber-400 mt-2">
@@ -579,12 +683,16 @@ function ProfileCard({ title, accent, profile }) {
 
 function ResultsScreen({ result, onBack }) {
   return (
-    <Shell>
-      <div className="flex-1 flex flex-col justify-center px-6 py-10 max-w-md mx-auto w-full">
-        <div className="text-xs tracking-widest text-cyan-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-          Résultats
-        </div>
-
+    <ScreenShell
+      eyebrow="Résultats"
+      eyebrowColor="text-cyan-400"
+      footer={
+        <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+          Retour à la session
+        </button>
+      }
+    >
+      <div className="mt-4">
         {result.status === 'insufficient_valid_trials' ? (
           <>
             <h1 className="text-xl font-semibold mb-4">Pas encore assez d’essais valides</h1>
@@ -612,12 +720,8 @@ function ResultsScreen({ result, onBack }) {
             )}
           </>
         )}
-
-        <button onClick={onBack} className="py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
-          Retour à la session
-        </button>
       </div>
-    </Shell>
+    </ScreenShell>
   );
 }
 
@@ -674,7 +778,7 @@ export default function App() {
 
   const handleAslrCaptured = useCallback(
     async (payload) => {
-      if (!payload.blob) return fail(new Error('Capture invalide : aucune donnée récupérée.'));
+      if (!payload.blob) return fail(new Error("La capture n'a pas abouti, réessaie."));
       // Le chargement du modèle d'analyse (~10-20 Mo, premier appel de la session) peut
       // prendre du temps sur une connexion mobile lente, sans aucune progression mesurable
       // pendant ce temps — un libellé figé "Analyse…" pendant 30s donnait l'impression que
@@ -712,6 +816,10 @@ export default function App() {
     setStage('aslr-capture');
   }, []);
 
+  // Point d'entrée du protocole : sans ça, un utilisateur qui lance le test par erreur (ou
+  // veut juste explorer l'appli) n'a aucune sortie sinon le bouton retour du navigateur.
+  const cancelAslrCapture = useCallback(() => setStage(profile ? 'session' : 'welcome'), [profile]);
+
   // Nouvel essai : un écran unique liste les 3 étapes (vidéo, photo, réglages), chacune
   // avec son bouton — pas de séquence forcée. On peut les faire dans n'importe quel ordre,
   // revenir en arrière, et l'essai n'est enregistré qu'une fois les 3 complétées.
@@ -735,13 +843,18 @@ export default function App() {
   const cancelTrialStep = useCallback(() => setStage('trial-overview'), []);
 
   const cancelTrial = useCallback(() => {
+    // Ne demander confirmation que s'il y a vraiment quelque chose à perdre — un essai tout
+    // juste démarré (aucune étape complétée) n'a rien à confirmer, ça ne ferait que ralentir
+    // un simple "je me suis trompé, retour".
+    const hasProgress = pendingTrial && (pendingTrial.angles || pendingTrial.frontal || pendingTrial.deltas);
+    if (hasProgress && !confirm('Abandonner cet essai ? Les étapes déjà complétées seront perdues.')) return;
     setPendingTrial(null);
     setStage('session');
-  }, []);
+  }, [pendingTrial]);
 
   const handleTrialVideoCaptured = useCallback(
     async (payload) => {
-      if (!payload.blob) return fail(new Error('Capture invalide : aucune donnée récupérée.'));
+      if (!payload.blob) return fail(new Error("La capture n'a pas abouti, réessaie."));
       setBusy('Chargement du modèle d’analyse…');
       setBusyProgress(null);
       try {
@@ -762,7 +875,7 @@ export default function App() {
 
   const handleTrialPhotoCaptured = useCallback(
     async (payload) => {
-      if (!payload.blob || !payload.calibration) return fail(new Error('Étalonnage manquant (2 points requis).'));
+      if (!payload.blob || !payload.calibration) return fail(new Error("Il manque l'étalonnage : touche 2 points sur la photo (ex. les extrémités du cintre) avant de valider."));
       setBusy('Analyse de la photo frontale…');
       setBusyProgress(null);
       try {
@@ -814,7 +927,7 @@ export default function App() {
     case 'welcome':
       return <WelcomeScreen onStart={() => setStage('aslr-capture')} />;
     case 'aslr-capture':
-      return <PostureCaptureFlow key="aslr" initialMode="aslr_test" onCaptured={handleAslrCaptured} />;
+      return <PostureCaptureFlow key="aslr" initialMode="aslr_test" onCaptured={handleAslrCaptured} onCancel={cancelAslrCapture} />;
     case 'profile-form':
       return <ProfileForm aslrAngle={aslrAngle} aslrTrace={aslrTrace} onSubmit={handleProfileSubmit} onRetakeAslr={retakeAslr} />;
     case 'trial-overview':
