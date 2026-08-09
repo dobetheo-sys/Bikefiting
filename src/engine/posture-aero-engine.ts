@@ -39,7 +39,11 @@ export interface Trial {
   id: string;
   angles: TrialAngles;
   frontal: FrontalCapture;
-  deltas: { saddleHeightMm: number; reachMm: number; dropMm: number };
+  // saddleSetbackMm optionnel : ajouté après coup (retour d'audit bikefitting — le recul de
+  // selle manquait alors qu'il conditionne directement l'angle hanche/genou à un trunk angle
+  // donné) ; optionnel pour ne pas casser les Trial déjà persistés en localStorage avant
+  // l'ajout du champ.
+  deltas: { saddleHeightMm: number; saddleSetbackMm?: number; reachMm: number; dropMm: number };
 }
 
 export interface Violation {

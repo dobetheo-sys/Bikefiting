@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp, Crosshair, Upload } from 'lucide-react';
+import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp, Crosshair, Upload, Lock } from 'lucide-react';
 
 // posture-capture-flow.jsx
 // Flux de capture réel (caméra du téléphone) pour les deux entrées du pipeline §2 du spec :
@@ -24,9 +24,10 @@ const MODES = {
     label: 'vidéo profil',
     checklist: [
       'Caméra fixe (support/trépied), vue de profil, dans l\u2019axe du vélo',
+      'Recul d\u2019environ 3-4 m, caméra à hauteur de hanche (ni au sol ni en hauteur, ça fausse les angles)',
       'Cadrage : vélo + corps entier visibles',
       'Même réglage vélo qu\u2019à l\u2019essai précédent si tu compares',
-      'Effort stable, plusieurs tours de pédalage complets pendant l\u2019enregistrement',
+      'Effort stable, plusieurs tours de pédalage complets (au moins 5) pendant l\u2019enregistrement',
     ],
   },
   frontal_photo: {
@@ -34,23 +35,31 @@ const MODES = {
     checklist: [
       'Caméra dans l\u2019axe du vélo, vue de face',
       'Recul d\u2019au moins 5 m (sinon la mesure de surface est faussée)',
-      'Un repère de longueur connue visible (ex. largeur de cintre) pour l\u2019étalonnage',
-      'Position immobile au moment de la photo',
+      'Un repère de longueur connue visible (ex. largeur de cintre), au même plan que toi, pour l\u2019étalonnage',
+      'Position immobile au moment de la photo, dans ta position aéro habituelle',
     ],
   },
   aslr_test: {
     label: 'test souplesse (ASLR)',
     checklist: [
       'Allongé sur le dos, téléphone au sol/sur un support, vue de côté (sagittale)',
+      'Jambe non testée : garde-la tendue et bien à plat au sol pendant tout le test (sinon la mesure est faussée)',
       'Recule le téléphone : laisse de la place au-dessus de toi dans le cadre, la jambe monte plus haut que prévu',
       'Cadrage : hanche, jambe testée ET pied entièrement visibles, même en haut de la levée',
       'Jambe testée tendue, genou verrouillé',
-      'Lève la jambe le plus haut possible sans plier le genou, sans forcer',
+      'Lève la jambe le plus haut possible sans plier le genou — arrête-toi si ça tire ou fait mal',
     ],
   },
 };
 
 const VIDEO_MODES = new Set(['profile_video', 'aslr_test']);
+
+// Import-first pour les 3 modes, pas juste la vidéo : au départ seule la vidéo était
+// concernée (MediaRecorder capricieux), mais avoir la photo se comporter différemment
+// (caméra live d'emblée) sans raison visible pour l'utilisateur était incohérent — retour
+// d'audit ergonomique. La checklist reste utile à lire avant de dégainer l'appareil photo
+// natif, quel que soit le type de média.
+const IMPORT_FIRST_MODES = new Set(['profile_video', 'aslr_test', 'frontal_photo']);
 
 // Mémorise la longueur du repère d'étalonnage (ex. largeur de cintre) d'une capture à
 // l'autre — c'est en général toujours le même repère, pas la peine de le retaper.
@@ -68,6 +77,15 @@ function formatElapsed(ms) {
   const s = Math.floor(ms / 1000);
   const cs = Math.floor((ms % 1000) / 100);
   return `${String(s).padStart(2, '0')}.${cs}s`;
+}
+
+function PrivacyNote({ className = '' }) {
+  return (
+    <div className={`flex items-center gap-1.5 text-[11px] text-neutral-600 ${className}`}>
+      <Lock className="w-3 h-3 shrink-0" />
+      <span>Traité sur ton téléphone, rien n'est envoyé en ligne</span>
+    </div>
+  );
 }
 
 function ChecklistPanel({ mode, open, onToggle }) {
@@ -106,7 +124,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const [refLengthCm, setRefLengthCm] = useState(loadStoredRefLength);
   const [tilt, setTilt] = useState(null);
   const [tiltOffset, setTiltOffset] = useState(0);
-  const [videoCaptureUi, setVideoCaptureUi] = useState('import'); // 'import' | 'live' — modes vidéo seulement
+  const [captureUi, setCaptureUi] = useState('import'); // 'import' | 'live'
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -171,28 +189,32 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
     return () => window.removeEventListener('deviceorientation', onOrientation);
   }, []);
 
-  // Pour les modes vidéo, l'enregistrement natif (appli caméra du téléphone) est bien plus
-  // fiable que MediaRecorder dans le navigateur — c'est justement la source de la plupart
-  // des bugs réels rencontrés (webm sans index de seek, écran qui se verrouille, permissions
-  // capricieuses). Par défaut on n'ouvre donc PAS la caméra du navigateur pour ces modes :
-  // on affiche direct la checklist + un bouton d'import. `live: true` force l'ancien
-  // comportement (filmer directement dans l'appli), gardé en repli pour qui préfère.
+  // Pour les 3 modes, l'enregistrement natif (appli caméra/photo du téléphone) est bien
+  // plus fiable que ce que le navigateur propose — c'est justement la source de la plupart
+  // des bugs réels rencontrés côté vidéo (webm sans index de seek, écran qui se verrouille,
+  // permissions capricieuses). Par défaut on n'ouvre donc PAS la caméra du navigateur : on
+  // affiche direct la checklist + un bouton d'import. `live: true` force l'ancien
+  // comportement (capturer directement dans l'appli), gardé en repli pour qui préfère.
   const startCamera = useCallback(async (m, { live = false } = {}) => {
     setError(null);
     setMode(m);
-    setChecklistOpen(true);
-    if (VIDEO_MODES.has(m) && !live) {
-      setVideoCaptureUi('import');
+    if (IMPORT_FIRST_MODES.has(m) && !live) {
+      setChecklistOpen(true);
+      setCaptureUi('import');
       setScreen('camera');
       return;
     }
+    // Vue caméra live : la checklist a déjà été lue sur l'écran d'import précédent (ou
+    // n'a jamais servi à rien pour ce mode) — on la replie par défaut pour laisser toute
+    // la place à l'aperçu (réticule + niveau), qui compte le plus au moment de cadrer.
+    setChecklistOpen(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
       streamRef.current = stream;
-      setVideoCaptureUi('live');
+      setCaptureUi('live');
       setScreen('camera');
       // srcObject assigné après le rendu (voir effect ci-dessous)
       acquireWakeLock();
@@ -200,25 +222,25 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
       const msg =
         e && e.name === 'NotAllowedError'
           ? 'Accès caméra refusé. Autorise la caméra dans les réglages du navigateur pour continuer.'
-          : 'Caméra inaccessible sur cet appareil ou dans ce contexte d\u2019aperçu.';
+          : 'La caméra n\u2019a pas pu s\u2019activer sur cet appareil. Réessaie, ou importe une vidéo/photo déjà prise.';
       setError(msg);
       setScreen('camera');
     }
   }, [acquireWakeLock]);
 
-  const startLiveVideoCapture = () => startCamera(mode, { live: true });
+  const startLiveCapture = () => startCamera(mode, { live: true });
 
-  // Dépend aussi de videoCaptureUi, pas seulement de screen : pour les modes vidéo,
-  // screen vaut déjà 'camera' pendant l'étape import (checklist + bouton "Choisir la
-  // vidéo") — passer en filmage direct ne fait basculer que videoCaptureUi ('import' ->
-  // 'live'), pas screen. Sans cette dépendance, l'effet ne se redéclenchait jamais : le
-  // <video> se montait bien mais sans flux attaché (aperçu noir, "ne marche pas").
+  // Dépend aussi de captureUi, pas seulement de screen : pendant l'étape import (checklist
+  // + bouton d'import), screen vaut déjà 'camera' — passer en capture directe ne fait
+  // basculer que captureUi ('import' -> 'live'), pas screen. Sans cette dépendance, l'effet
+  // ne se redéclenchait jamais : le <video> se montait bien mais sans flux attaché (aperçu
+  // noir, "ne marche pas").
   useEffect(() => {
-    if (screen === 'camera' && videoCaptureUi === 'live' && videoRef.current && streamRef.current) {
+    if (screen === 'camera' && captureUi === 'live' && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
       videoRef.current.play().catch(() => {});
     }
-  }, [screen, videoCaptureUi]);
+  }, [screen, captureUi]);
 
   // Si initialMode est fourni, l'appelant pilote la séquence de capture (App.jsx) :
   // on saute l'écran de choix et on démarre directement la caméra pour ce mode.
@@ -416,14 +438,26 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 Retour
               </button>
             </div>
-          ) : VIDEO_MODES.has(mode) && videoCaptureUi === 'import' ? (
+          ) : IMPORT_FIRST_MODES.has(mode) && captureUi === 'import' ? (
             <>
               <div className="flex-1 flex flex-col items-center justify-center px-6 text-center bg-black">
-                <Video className="w-9 h-9 text-neutral-700 mb-4" />
-                <p className="text-neutral-300 text-sm max-w-xs leading-relaxed">
-                  Filme {MODES[mode].label} avec l'appli caméra de ton téléphone en suivant la checklist ci-dessous,
-                  puis importe le fichier ici.
-                </p>
+                {VIDEO_MODES.has(mode) ? (
+                  <>
+                    <Video className="w-9 h-9 text-neutral-700 mb-4" />
+                    <p className="text-neutral-300 text-sm max-w-xs leading-relaxed">
+                      Filme {MODES[mode].label} avec l'appli caméra de ton téléphone en suivant la checklist ci-dessous,
+                      puis importe le fichier ici.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-9 h-9 text-neutral-700 mb-4" />
+                    <p className="text-neutral-300 text-sm max-w-xs leading-relaxed">
+                      Prends {MODES[mode].label} avec l'appli photo de ton téléphone en suivant la checklist ci-dessous,
+                      puis importe le fichier ici.
+                    </p>
+                  </>
+                )}
               </div>
 
               <ChecklistPanel mode={mode} open={checklistOpen} onToggle={() => setChecklistOpen((v) => !v)} />
@@ -431,14 +465,19 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               <div className="bg-black px-6 py-5 flex flex-col items-center gap-3">
                 <label className="w-full flex items-center justify-center gap-2 py-3.5 rounded-lg bg-amber-400 text-neutral-950 font-medium cursor-pointer focus-within:ring-2 focus-within:ring-amber-200">
                   <Upload className="w-4 h-4" />
-                  Choisir la vidéo
-                  <input type="file" accept="video/*" className="hidden" onChange={importVideo} />
+                  {VIDEO_MODES.has(mode) ? 'Choisir la vidéo' : 'Choisir la photo'}
+                  <input
+                    type="file"
+                    accept={VIDEO_MODES.has(mode) ? 'video/*' : 'image/*'}
+                    className="hidden"
+                    onChange={VIDEO_MODES.has(mode) ? importVideo : importPhoto}
+                  />
                 </label>
                 <button
-                  onClick={startLiveVideoCapture}
+                  onClick={startLiveCapture}
                   className="text-xs text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
                 >
-                  Filmer directement dans l'appli
+                  {VIDEO_MODES.has(mode) ? "Filmer directement dans l'appli" : 'Prendre la photo maintenant dans l’appli'}
                 </button>
                 {onCancel && (
                   <button
@@ -448,6 +487,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                     Annuler
                   </button>
                 )}
+                <PrivacyNote className="pt-2" />
               </div>
             </>
           ) : (
@@ -513,20 +553,13 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                     </button>
                   )
                 ) : (
-                  <>
-                    <button
-                      onClick={capturePhoto}
-                      className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400 ring-offset-2 ring-offset-black"
-                      aria-label="Prendre la photo"
-                    >
-                      <span className="w-12 h-12 rounded-full bg-neutral-100" />
-                    </button>
-                    <label className="text-xs text-neutral-500 underline underline-offset-4 flex items-center gap-1.5 cursor-pointer focus-within:ring-2 focus-within:ring-cyan-400 rounded px-1">
-                      <Upload className="w-3.5 h-3.5" />
-                      Importer une photo depuis la galerie
-                      <input type="file" accept="image/*" className="hidden" onChange={importPhoto} />
-                    </label>
-                  </>
+                  <button
+                    onClick={capturePhoto}
+                    className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400 ring-offset-2 ring-offset-black"
+                    aria-label="Prendre la photo"
+                  >
+                    <span className="w-12 h-12 rounded-full bg-neutral-100" />
+                  </button>
                 )}
                 {onCancel && !recording && (
                   <button
@@ -536,6 +569,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                     Annuler
                   </button>
                 )}
+                {!recording && <PrivacyNote />}
               </div>
             </>
           )}
