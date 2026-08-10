@@ -655,15 +655,18 @@ function TrialOverview({ trialNumber, pendingTrial, onOpenVideo, onOpenPhoto, on
   );
 }
 
+// Retour terrain : "le nom des points rend la lecture impossible" — chip à côté (pas sous) le
+// point, réduite, pour ne plus masquer l'image ni le point voisin (même correction que TapImage
+// dans PostureCaptureFlow.jsx, qui a le même souci sur les points en cours de pose).
 function ReviewMarker({ point, size, label }) {
   if (!size) return null;
   return (
     <div
-      className="absolute flex flex-col items-center pointer-events-none"
+      className="absolute flex items-center gap-1 pointer-events-none"
       style={{ left: `${(point.x / size.width) * 100}%`, top: `${(point.y / size.height) * 100}%`, transform: 'translate(-50%,-50%)' }}
     >
-      <div className="w-3 h-3 rounded-full bg-cyan-400 border-2 border-neutral-950" />
-      {label && <span className="mt-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-cyan-200 whitespace-nowrap">{label}</span>}
+      <div className="w-3 h-3 rounded-full bg-cyan-400 border-2 border-neutral-950 shrink-0" />
+      {label && <span className="px-1 rounded bg-black/50 text-[8px] leading-tight text-cyan-200 whitespace-nowrap">{label}</span>}
     </div>
   );
 }
