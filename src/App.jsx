@@ -338,6 +338,7 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
   const [heightCm, setHeightCm] = useState('178');
   const [raceDurationHours, setRaceDurationHours] = useState('2.5');
   const [inseamCm, setInseamCm] = useState('');
+  const [goal, setGoal] = useState('aero');
   const flexScore = aslrToFlexScore(aslrAngle);
   const heightValid = Number(heightCm) > 0;
   const referenceSaddleHeightCm = Number(inseamCm) > 0 ? computeReferenceSaddleHeightCm(Number(inseamCm)) : null;
@@ -354,7 +355,8 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
               onSubmit(
                 Number(heightCm),
                 raceDurationHours ? Number(raceDurationHours) : undefined,
-                Number(inseamCm) > 0 ? Number(inseamCm) : undefined
+                Number(inseamCm) > 0 ? Number(inseamCm) : undefined,
+                goal
               )
             }
             disabled={!heightValid}
@@ -396,6 +398,35 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
           suffix="cm"
           hint="Debout, du sol à l'entrejambe (sans chaussures). Optionnel — sert juste à te suggérer une hauteur de selle de référence si tu ne connais pas déjà ton réglage habituel."
         />
+      </div>
+
+      <div className="mb-6">
+        <div className="text-sm text-neutral-200 mb-1.5">Objectif de la position</div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setGoal('aero')}
+            className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+              goal === 'aero' ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+            }`}
+          >
+            Aéro
+          </button>
+          <button
+            type="button"
+            onClick={() => setGoal('comfort')}
+            className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+              goal === 'comfort' ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+            }`}
+          >
+            Confort
+          </button>
+        </div>
+        <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
+          {goal === 'aero'
+            ? "Position TT/tri très couchée : tronc entre 5° et 15°, genou entre 137° et 150° restent des critères qui excluent un essai s'ils ne sont pas respectés (plage sourcée, cf. spec)."
+            : "Position route classique, plus redressée et facile à régler : tronc et genou deviennent des repères informatifs plutôt que des critères d'exclusion (pas de plage \"confort\" universelle à imposer). La hanche (plancher 40°, perte de puissance mesurée) reste, elle, un critère dur dans les deux cas."}
+        </p>
       </div>
 
       {referenceSaddleHeightCm && (
@@ -451,7 +482,9 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
         </>
       }
     >
-      <p className="text-neutral-400 text-sm mb-3">Souplesse {profile.hipFlexibilityScore}/5</p>
+      <p className="text-neutral-400 text-sm mb-3">
+        Souplesse {profile.hipFlexibilityScore}/5 · Objectif {profile.goal === 'comfort' ? 'confort' : 'aéro'}
+      </p>
 
       {trials.length === 0 && referenceSaddleHeightCm && (
         <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-4">
@@ -921,8 +954,10 @@ function ProfileCard({ title, accent, profile }) {
         {formatDeltas(profile.deltas)}
       </div>
       {profile.warnings.length > 0 && (
-        <div className="text-xs text-amber-400 mt-2">
-          {profile.warnings.map((w) => w.param).join(', ')} — avertissement, pas exclusoire
+        <div className="text-xs text-amber-400 mt-2 space-y-0.5">
+          {profile.warnings.map((w, i) => (
+            <div key={i}>{formatViolation(w)} — avertissement, pas exclusoire</div>
+          ))}
         </div>
       )}
     </div>
@@ -1064,10 +1099,10 @@ export default function App() {
     setStage('profile-form');
   }, []);
 
-  const handleProfileSubmit = useCallback((heightCm, raceDurationHours, inseamCm) => {
+  const handleProfileSubmit = useCallback((heightCm, raceDurationHours, inseamCm, goal) => {
     setAthleteHeightCm(heightCm);
     setAthleteInseamCm(inseamCm ?? null);
-    setProfile({ hipFlexibilityScore: aslrToFlexScore(aslrAngle), raceDurationHours });
+    setProfile({ hipFlexibilityScore: aslrToFlexScore(aslrAngle), raceDurationHours, goal });
     setStage('session');
   }, [aslrAngle]);
 
