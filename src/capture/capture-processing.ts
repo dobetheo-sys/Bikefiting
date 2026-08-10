@@ -124,7 +124,7 @@ export function extractTrialAngles(frames: PoseFrame[]): TrialAngles {
 // Protocole (spec §3.1) : allongé, jambe testée tendue (genou verrouillé), on la lève le plus
 // haut possible sans plier le genou ; la mesure s'arrête au moment où le genou commence à plier.
 
-const KNEE_STRAIGHT_THRESHOLD = 165; // sous ce seuil, le genou est considéré en train de plier -> fin de mesure
+export const KNEE_STRAIGHT_THRESHOLD = 165; // sous ce seuil, le genou est considéré en train de plier -> fin de mesure
 
 // Sous ce seuil de cuisse, on considère qu'on est encore en position de repos/installation
 // (avant que la levée n'ait vraiment commencé), pas dans le mouvement testé lui-même.
@@ -214,6 +214,29 @@ export function extractAslrAngle(frames: PoseFrame[]): number {
 export function extractAslrAngleTrace(frames: PoseFrame[]): AslrTrace {
   if (frames.length === 0) throw new Error('extractAslrAngle: aucune frame fournie');
   return computeAslrTrace(frames);
+}
+
+// ---------- Mesure manuelle ASLR (3 taps : hanche, genou, cheville) ----------
+// Alternative à la détection automatique ci-dessus — retour terrain (10/08/2026) : la
+// détection MediaPipe a échoué sur plusieurs vraies vidéos malgré des corrections
+// successives (cadrage, contre-jour, seuils de confiance), toujours pour la même raison de
+// fond : filmer quelqu'un allongé au sol, vu de loin et au ras du sol, sort largement du cas
+// standard ("personne debout, cadrée serré") sur lequel ces modèles sont entraînés/calibrés.
+// Plutôt que de continuer à durcir un pipeline auto peu fiable pour ce cas précis, l'utilisateur
+// choisit lui-même l'image où sa jambe testée est la plus haute et touche 3 points — mêmes
+// formules géométriques que la détection auto (angleAt, angleVsHorizontal), juste alimentées
+// par des points tapés à la main plutôt que par des landmarks MediaPipe.
+
+export interface ManualAslrMeasurement {
+  angle: number; // cuisse (hanche -> genou) vs horizontale, en degrés — c'est l'angle ASLR
+  kneeAngle: number; // hanche-genou-cheville, en degrés — indicateur de jambe tendue (proche de 180°)
+}
+
+export function computeManualAslrAngle(hip: Landmark, knee: Landmark, ankle: Landmark): ManualAslrMeasurement {
+  return {
+    angle: r1(angleVsHorizontal(hip, knee)),
+    kneeAngle: r1(angleAt(hip, knee, ankle)),
+  };
 }
 
 // ---------- pFSA depuis un masque de silhouette calibré ----------

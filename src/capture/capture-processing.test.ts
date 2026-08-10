@@ -4,6 +4,7 @@ import {
   extractTrialAngles,
   extractAslrAngle,
   extractAslrAngleTrace,
+  computeManualAslrAngle,
   computePFSA_cm2,
   IDX,
   type PoseFrame,
@@ -187,6 +188,26 @@ describe('extractAslrAngle — §3.1 du spec, point d\'arrêt = genou qui plie',
     const trace = extractAslrAngleTrace(synthAslrFramesNeverEngaged());
     assert.equal(trace.engagedAtIndex, null);
     assert.equal(trace.angle, 0);
+  });
+});
+
+describe('computeManualAslrAngle — mesure par 3 taps (hanche/genou/cheville), retour terrain 10/08/2026', () => {
+  // hanche->genou->cheville alignés, cuisse à 60° de l'horizontale (calcul manuel exact,
+  // même construction que synthAslrFrames() ci-dessus).
+  const hip: Landmark = { x: 0.5, y: 0.5, visibility: 0.95 };
+  const knee: Landmark = { x: 0.6, y: 0.3268, visibility: 0.9 };
+  const straightAnkle: Landmark = { x: 0.7, y: 0.1536, visibility: 0.85 };
+
+  test('angle cuisse = 60° et genou = 180° quand hanche/genou/cheville sont alignés', () => {
+    const m = computeManualAslrAngle(hip, knee, straightAnkle);
+    assert.equal(m.angle, 60);
+    assert.equal(m.kneeAngle, 180);
+  });
+
+  test('kneeAngle sous le seuil "tendu" quand la cheville sort de l\'alignement (genou plié)', () => {
+    const bentAnkle: Landmark = { x: knee.x + 0.15, y: knee.y + 0.05, visibility: 0.85 };
+    const m = computeManualAslrAngle(hip, knee, bentAnkle);
+    assert.ok(m.kneeAngle < 165, `kneeAngle=${m.kneeAngle}, attendu < 165 (genou plié)`);
   });
 });
 

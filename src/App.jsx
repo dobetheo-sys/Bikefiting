@@ -15,8 +15,6 @@ import {
   Video,
   Camera,
   ChevronRight,
-  ChevronDown,
-  ChevronUp,
   Circle,
   Lock,
 } from 'lucide-react';
@@ -25,19 +23,24 @@ import { getVisionFileset } from './capture/mediapipe-vision';
 import { createBikeFitSegmenter, toBikeFitBinaryMask } from './capture/segmentation-integration';
 import { createBikeFitPoseLandmarker, toPoseFrame } from './capture/pose-integration';
 import { sampleVideoFrames } from './capture/video-frame-sampler';
-import { computePFSA_cm2, extractTrialAngles, extractAslrAngleTrace } from './capture/capture-processing';
+import { computePFSA_cm2, extractTrialAngles, KNEE_STRAIGHT_THRESHOLD } from './capture/capture-processing';
 import { aslrToFlexScore, runEngine } from './engine/posture-aero-engine';
 
 // App.jsx — orchestre toute la session : test de souplesse (ASLR) -> profil athlète ->
 // essais (vidéo profil + photo frontale + deltas matériel) -> runEngine (validation,
 // score, sélection Pareto). Voir spec §2/§3.1/§6 pour le protocole complet.
 //
+// Le test ASLR est mesuré MANUELLEMENT (3 taps de l'utilisateur sur une image de sa propre
+// vidéo, cf. PostureCaptureFlow.jsx + capture-processing.ts/computeManualAslrAngle) — pas de
+// pipeline MediaPipe pour cette étape. handleAslrCaptured ci-dessous reçoit directement l'angle
+// déjà calculé, contrairement à handleTrialVideoCaptured/handleTrialPhotoCaptured qui pilotent
+// encore la détection automatique (vidéo profil, photo frontale).
+//
 // subjective_multiplier (§7, boucle de feedback) : pas de questionnaire post-sortie ici,
 // on reste sur les poids neutres (1.0 partout) — recalibrateWeights() existe et est testé
 // dans le moteur mais brancher une vraie boucle de feedback est hors scope de cette étape.
 
 const TRIAL_SAMPLE_COUNT = 30; // frames échantillonnées sur la vidéo profil (cycle de pédalage)
-const ASLR_SAMPLE_COUNT = 40; // plus fin : on cherche un point d'arrêt précis (genou qui plie)
 const NEUTRAL_WEIGHTS = { neck: 1, lowerBack: 1, hands: 1, knees: 1 };
 
 // Persistance de session (retour terrain : un plantage du navigateur en pleine capture
@@ -91,30 +94,6 @@ async function samplePoseFramesFromVideo(blob, sampleCount, onProgress, onModelR
   } finally {
     landmarker.close();
   }
-}
-
-async function processAslrVideo(blob, onProgress, onModelReady) {
-  const frames = await samplePoseFramesFromVideo(blob, ASLR_SAMPLE_COUNT, onProgress, onModelReady);
-  if (frames.length === 0) {
-    throw new Error(
-      "On n'a pas réussi à te repérer sur cette vidéo. Vérifie que ta hanche et toute la jambe testée sont bien visibles à l'écran, puis réessaie."
-    );
-  }
-  const trace = extractAslrAngleTrace(frames);
-  // engagedAtIndex === null : la levée n'a jamais été détectée comme réellement engagée (cuisse
-  // >= 15° sur plusieurs frames consécutives). Retour terrain (10/08/2026) : une vidéo filmée
-  // trop loin et à contre-jour (caméra dans une autre pièce, à travers une porte, en direction
-  // d'une fenêtre) n'a laissé détecter QU'UNE frame sur 40 — cette frame avait un genou plié,
-  // donc maxThighAngle (initialisé à 0) n'a jamais été mis à jour : l'appli affichait "0°" comme
-  // si c'était une vraie mesure de souplesse nulle, alors que la vidéo montrait une levée à ~90°
-  // parfaitement correcte, juste indétectable par le modèle. Un test jamais engagé n'est PAS un
-  // 0° valide — c'est un échec de mesure, à traiter comme tel.
-  if (trace.engagedAtIndex === null) {
-    throw new Error(
-      "On n'a pas réussi à mesurer la levée de ta jambe sur cette vidéo (pas assez d'images où tu es bien visible). Essaie de filmer en mode paysage et de te rapprocher le plus possible sans sortir du cadre, puis réessaie."
-    );
-  }
-  return trace;
 }
 
 async function processProfileVideoTrial(blob, onProgress, onModelReady) {
@@ -387,10 +366,9 @@ function NumberField({ label, value, onChange, suffix, required }) {
   );
 }
 
-function ProfileForm({ aslrAngle, aslrTrace, onSubmit, onRetakeAslr }) {
+function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
   const [heightCm, setHeightCm] = useState('178');
   const [raceDurationHours, setRaceDurationHours] = useState('2.5');
-  const [showDebug, setShowDebug] = useState(false);
   const flexScore = aslrToFlexScore(aslrAngle);
   const heightValid = Number(heightCm) > 0;
 
@@ -424,22 +402,11 @@ function ProfileForm({ aslrAngle, aslrTrace, onSubmit, onRetakeAslr }) {
         <p className="text-xs text-neutral-500 mt-2">
           Score de souplesse : {flexScore}/5 (seuil clinique de tightness = 80°, cf. spec §3.1).
         </p>
-        {aslrTrace && (
-          <>
-            <button
-              onClick={() => setShowDebug((v) => !v)}
-              className="flex items-center gap-1 text-[11px] text-neutral-600 mt-3 focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded"
-            >
-              Détails techniques {showDebug ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-            {showDebug && (
-              <p className="text-[11px] text-neutral-600 mt-1.5" style={{ fontFamily: 'ui-monospace, monospace' }}>
-                {aslrTrace.framesStraightKnee}/{aslrTrace.framesTotal} images genou droit ·
-                {' '}engagé image #{aslrTrace.engagedAtIndex ?? '—'} ·
-                {' '}arrêt image #{aslrTrace.stoppedAtIndex ?? 'fin vidéo'}
-              </p>
-            )}
-          </>
+        {aslrKneeAngle != null && (
+          <p className="text-xs text-neutral-500 mt-2">
+            Genou mesuré à {aslrKneeAngle}° au moment de la levée
+            {aslrKneeAngle < KNEE_STRAIGHT_THRESHOLD ? ' (un peu plié — si le résultat te semble faux, refais le test).' : ' (bien tendu).'}
+          </p>
         )}
       </div>
 
@@ -743,7 +710,7 @@ export default function App() {
   const [persisted] = useState(() => loadPersistedSession());
   const [stage, setStage] = useState(() => initialStageFor(persisted));
   const [aslrAngle, setAslrAngle] = useState(() => persisted?.aslrAngle ?? null);
-  const [aslrTrace, setAslrTrace] = useState(null);
+  const [aslrKneeAngle, setAslrKneeAngle] = useState(null);
   const [profile, setProfile] = useState(() => persisted?.profile ?? null);
   const [athleteHeightCm, setAthleteHeightCm] = useState(() => persisted?.athleteHeightCm ?? null);
   const [trials, setTrials] = useState(() => persisted?.trials ?? []);
@@ -769,7 +736,7 @@ export default function App() {
       // ignoré
     }
     setAslrAngle(null);
-    setAslrTrace(null);
+    setAslrKneeAngle(null);
     setProfile(null);
     setAthleteHeightCm(null);
     setTrials([]);
@@ -790,33 +757,14 @@ export default function App() {
     setBusy(null);
   }, []);
 
-  const handleAslrCaptured = useCallback(
-    async (payload) => {
-      if (!payload.blob) return fail(new Error("La capture n'a pas abouti, réessaie."));
-      // Le chargement du modèle d'analyse (~10-20 Mo, premier appel de la session) peut
-      // prendre du temps sur une connexion mobile lente, sans aucune progression mesurable
-      // pendant ce temps — un libellé figé "Analyse…" pendant 30s donnait l'impression que
-      // l'appli était plantée (retour terrain : "plus d'écran d'attente"). On distingue donc
-      // les deux phases : chargement du modèle (spinner seul) puis analyse (barre de
-      // progression par image).
-      setBusy('Chargement du modèle d’analyse…');
-      setBusyProgress(null);
-      try {
-        const trace = await processAslrVideo(
-          payload.blob,
-          (current, total) => setBusyProgress({ current, total }),
-          () => setBusy('Analyse du test de souplesse…')
-        );
-        setAslrAngle(trace.angle);
-        setAslrTrace(trace);
-        setBusy(null);
-        setStage('profile-form');
-      } catch (e) {
-        fail(e);
-      }
-    },
-    [fail]
-  );
+  // Mesure manuelle (3 taps hanche/genou/cheville, cf. PostureCaptureFlow.jsx) — l'angle est
+  // déjà calculé par le composant de capture, pas de pipeline MediaPipe à attendre ici, donc
+  // pas d'écran d'attente nécessaire pour cette étape.
+  const handleAslrCaptured = useCallback((payload) => {
+    setAslrAngle(payload.angle);
+    setAslrKneeAngle(payload.kneeAngle ?? null);
+    setStage('profile-form');
+  }, []);
 
   const handleProfileSubmit = useCallback((heightCm, raceDurationHours) => {
     setAthleteHeightCm(heightCm);
@@ -826,7 +774,7 @@ export default function App() {
 
   const retakeAslr = useCallback(() => {
     setAslrAngle(null);
-    setAslrTrace(null);
+    setAslrKneeAngle(null);
     setStage('aslr-capture');
   }, []);
 
@@ -943,7 +891,7 @@ export default function App() {
     case 'aslr-capture':
       return <PostureCaptureFlow key="aslr" initialMode="aslr_test" onCaptured={handleAslrCaptured} onCancel={cancelAslrCapture} />;
     case 'profile-form':
-      return <ProfileForm aslrAngle={aslrAngle} aslrTrace={aslrTrace} onSubmit={handleProfileSubmit} onRetakeAslr={retakeAslr} />;
+      return <ProfileForm aslrAngle={aslrAngle} aslrKneeAngle={aslrKneeAngle} onSubmit={handleProfileSubmit} onRetakeAslr={retakeAslr} />;
     case 'trial-overview':
       return (
         <TrialOverview
