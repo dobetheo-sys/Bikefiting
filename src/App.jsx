@@ -627,6 +627,28 @@ function BikeDeltasDiagram() {
   );
 }
 
+// Retour terrain : "peux-tu donner des consignes aussi pour la modification entre 2 essais ?"
+// — connaître les 4 champs (cf. BikeDeltasDiagram) ne dit pas quoi changer ni de combien pour
+// que la comparaison ait un sens. Incréments choisis pour se sentir sur le vélo sans dérégler
+// toute la position d'un coup (cohérents avec les plages KNEE_MIN/MAX, TRUNK_MIN/MAX du moteur
+// — un delta plus gros a de bonnes chances de sortir de la plage validée et d'exclure l'essai).
+function TrialDeltasGuidance() {
+  return (
+    <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-6">
+      <h2 className="text-xs tracking-widest text-cyan-300 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
+        Quoi changer entre 2 essais ?
+      </h2>
+      <ul className="text-xs text-cyan-100/80 space-y-1.5 leading-relaxed">
+        <li>• Change un seul réglage à la fois — sinon impossible de savoir lequel a fait la différence.</li>
+        <li>• Incréments qui se sentent sans dérégler toute la position : selle ±5 mm, reach ±10 mm, drop ±10-15 mm.</li>
+        <li>• Cherches plus de confort ? Commence par la selle (hauteur/recul) — c'est ce qui joue le plus sur le genou et la hanche.</li>
+        <li>• Cherches plus d'aéro ? Commence par le cintre (reach/drop) — c'est ce qui réduit le plus ta surface frontale.</li>
+        <li>• Laisse quelques tours de pédale pour t'habituer à la nouvelle position avant de filmer.</li>
+      </ul>
+    </div>
+  );
+}
+
 function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
   const [saddleHeightMm, setSaddleHeightMm] = useState(String(initialDeltas?.saddleHeightMm ?? 0));
   const [saddleSetbackMm, setSaddleSetbackMm] = useState(String(initialDeltas?.saddleSetbackMm ?? 0));
@@ -666,6 +688,8 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
       }
     >
       <BikeDeltasDiagram />
+
+      <TrialDeltasGuidance />
 
       <div className="space-y-5 mb-8">
         <NumberField
@@ -724,9 +748,6 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
           </p>
         </div>
       </div>
-      <p className="text-xs text-neutral-500 -mt-4 mb-6">
-        Idéalement, change un seul réglage à la fois entre deux essais — c'est le seul moyen de savoir lequel a fait la différence.
-      </p>
     </ScreenShell>
   );
 }
