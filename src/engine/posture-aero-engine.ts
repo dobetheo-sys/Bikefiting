@@ -27,6 +27,18 @@ export interface TrialAngles {
 export interface AthleteProfile {
   hipFlexibilityScore: 1 | 2 | 3 | 4 | 5; // via ASLR, cf. aslrToFlexScore()
   raceDurationHours?: number;
+  // Retour terrain : "les critères sont très précis, j'ai dû tricher un peu pour aligner les
+  // points" puis "je pense qu'il faut élargir les zones... moi je cherche une position très
+  // aéro [...] mais un débutant va chercher une position plus confortable et facile à régler".
+  // 'aero' (défaut) : tronc [TRUNK_MIN,TRUNK_MAX] et genou [KNEE_MIN,KNEE_MAX] restent des
+  // critères d'exclusion durs — la plage tronc en particulier est sourcée pour une position
+  // TT/tri précise (§9 du spec), pas pour une position route générique. 'comfort' : pas de
+  // plage tronc/genou "confort" sourcée équivalente à inventer (la fausse précision que
+  // l'app évite ailleurs) — tronc et genou passent en avertissement plutôt qu'en exclusion,
+  // mêmes seuils, même convention déjà utilisée pour le poignet (WRIST_WARN, non sourcé ->
+  // jamais exclusoire). La hanche (HIP_FLOOR_ABS) reste exclusoire dans les deux cas : c'est
+  // une perte de puissance mesurée, indépendante du style de position recherché.
+  goal?: 'aero' | 'comfort';
 }
 
 export interface FrontalCapture {
@@ -124,25 +136,32 @@ export function validateTrial(angles: TrialAngles, profile: AthleteProfile): Val
   const violations: Violation[] = [];
   const warnings: Violation[] = [];
   const margins: Record<string, number> = {};
+  const goal = profile.goal ?? 'aero';
 
-  // Hanche : plancher absolu, indépendant de la souplesse déclarée
+  // Hanche : plancher absolu, indépendant de la souplesse déclarée ET de l'objectif (perte de
+  // puissance mesurée, pas une question de style de position — cf. AthleteProfile.goal)
   if (angles.hip.mean < HIP_FLOOR_ABS) {
     violations.push({ param: 'hip_floor', value: angles.hip.mean, bound: HIP_FLOOR_ABS });
   }
   margins.hip_deg = round1(angles.hip.mean - HIP_FLOOR_ABS);
 
-  // Tronc
+  // Tronc : exclusoire en objectif 'aero' (plage TT/tri sourcée) ; avertissement seulement en
+  // 'comfort', cf. commentaire sur AthleteProfile.goal.
   if (angles.trunk.mean < TRUNK_MIN) {
-    violations.push({ param: 'trunk_min', value: angles.trunk.mean, bound: TRUNK_MIN });
+    const entry: Violation = { param: 'trunk_min', value: angles.trunk.mean, bound: TRUNK_MIN };
+    (goal === 'aero' ? violations : warnings).push(entry);
   }
   if (angles.trunk.mean > TRUNK_MAX) {
-    violations.push({ param: 'trunk_max', value: angles.trunk.mean, bound: TRUNK_MAX });
+    const entry: Violation = { param: 'trunk_max', value: angles.trunk.mean, bound: TRUNK_MAX };
+    (goal === 'aero' ? violations : warnings).push(entry);
   }
   margins.trunk_deg = round1(Math.min(angles.trunk.mean - TRUNK_MIN, TRUNK_MAX - angles.trunk.mean));
 
-  // Genou : doit rester dans la plage sur tout le cycle (min/max), pas juste en moyenne
+  // Genou : doit rester dans la plage sur tout le cycle (min/max), pas juste en moyenne.
+  // Exclusoire en 'aero' ; avertissement en 'comfort' (même raison que le tronc ci-dessus).
   if (angles.knee.min < KNEE_MIN || angles.knee.max > KNEE_MAX) {
-    violations.push({ param: 'knee_range', value: angles.knee.mean, bound: KNEE_MIN });
+    const entry: Violation = { param: 'knee_range', value: angles.knee.mean, bound: KNEE_MIN };
+    (goal === 'aero' ? violations : warnings).push(entry);
   }
   margins.knee_deg = round1(Math.min(angles.knee.min - KNEE_MIN, KNEE_MAX - angles.knee.max));
 
@@ -183,6 +202,10 @@ export interface AdjustmentSuggestion {
 
 export function suggestNextAdjustment(t: Trial, profile: AthleteProfile): AdjustmentSuggestion | null {
   const hipTarget = HIP_TARGET_BY_FLEX[profile.hipFlexibilityScore];
+  // Le tronc ne cible la plage aéro [TRUNK_MIN,TRUNK_MAX] qu'en objectif 'aero' — en 'comfort'
+  // il n'y a pas de cible sourcée équivalente (cf. AthleteProfile.goal), donc pas de
+  // suggestion sur ce critère : gapDeg à 0 l'exclut simplement des candidats ci-dessous.
+  const trunkTargeted = (profile.goal ?? 'aero') === 'aero';
   const candidates: AdjustmentSuggestion[] = [
     {
       param: 'hip',
@@ -191,12 +214,12 @@ export function suggestNextAdjustment(t: Trial, profile: AthleteProfile): Adjust
     },
     {
       param: 'trunk_high',
-      gapDeg: round1(Math.max(0, t.angles.trunk.mean - TRUNK_MAX)),
+      gapDeg: trunkTargeted ? round1(Math.max(0, t.angles.trunk.mean - TRUNK_MAX)) : 0,
       message: `Tronc à ${t.angles.trunk.mean}°, au-dessus du seuil aéro de ${TRUNK_MAX}° — essaie d'augmenter le drop (cintre plus bas) ou le reach.`,
     },
     {
       param: 'trunk_low',
-      gapDeg: round1(Math.max(0, TRUNK_MIN - t.angles.trunk.mean)),
+      gapDeg: trunkTargeted ? round1(Math.max(0, TRUNK_MIN - t.angles.trunk.mean)) : 0,
       message: `Tronc à ${t.angles.trunk.mean}°, sous le minimum de ${TRUNK_MIN}° — essaie de réduire le drop pour te redresser un peu.`,
     },
     {
@@ -230,10 +253,16 @@ export function computeComfortScore(t: Trial, profile: AthleteProfile, weights: 
   const hipGap = Math.max(0, hipTarget - t.angles.hip.mean); // en dessous de la cible = pénalité croissante
   score -= quadPenalty(hipGap, 0.3) * weights.lowerBack;
 
-  const trunkMid = (TRUNK_MIN + TRUNK_MAX) / 2;
-  const trunkHalfRange = (TRUNK_MAX - TRUNK_MIN) / 2;
-  const trunkGap = Math.abs(t.angles.trunk.mean - trunkMid) - trunkHalfRange;
-  score -= quadPenalty(trunkGap, 0.5) * weights.neck;
+  // Le tronc n'est pénalisé par rapport à la plage aéro [TRUNK_MIN,TRUNK_MAX] qu'en objectif
+  // 'aero' — en 'comfort' il n'y a pas de plage tronc sourcée équivalente (cf. commentaire sur
+  // AthleteProfile.goal), pénaliser quand même inventerait une cible non sourcée, alors que le
+  // confort réel d'un débutant peut très bien se situer à un tronc nettement plus redressé.
+  if ((profile.goal ?? 'aero') === 'aero') {
+    const trunkMid = (TRUNK_MIN + TRUNK_MAX) / 2;
+    const trunkHalfRange = (TRUNK_MAX - TRUNK_MIN) / 2;
+    const trunkGap = Math.abs(t.angles.trunk.mean - trunkMid) - trunkHalfRange;
+    score -= quadPenalty(trunkGap, 0.5) * weights.neck;
+  }
 
   // Stabilité inter-cycles : variance élevée = moins fiable / moins confortable sur la durée
   score -= Math.min(15, (t.angles.hip.variance + t.angles.trunk.variance) * 2);

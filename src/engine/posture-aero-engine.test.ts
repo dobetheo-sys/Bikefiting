@@ -4,6 +4,8 @@ import {
   aslrToFlexScore,
   computeReferenceSaddleHeightCm,
   suggestNextAdjustment,
+  validateTrial,
+  computeComfortScore,
   runEngine,
   recalibrateWeights,
   type Trial,
@@ -84,6 +86,69 @@ describe('suggestNextAdjustment — écart le plus grand -> réglage vélo à to
   test('aucun paramètre hors de sa zone cible -> pas de suggestion', () => {
     const t = mkTrial('t4', 47, 10, 700, 2, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 }); // hanche > cible 46, tronc dans [5,15], genou par défaut dans [137,150]
     assert.equal(suggestNextAdjustment(t, profile), null);
+  });
+
+  test("objectif 'comfort' -> pas de suggestion tronc même très hors plage (pas de cible sourcée)", () => {
+    const t = mkTrial('t5', 47, 35, 700, 2, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 }); // tronc 35°, hanche > cible, genou par défaut ok
+    assert.equal(suggestNextAdjustment(t, { hipFlexibilityScore: 3, goal: 'comfort' }), null);
+  });
+});
+
+// Retour terrain : "les critères sont très précis, j'ai dû tricher un peu pour aligner les
+// points" puis "il faut élargir les zones... un débutant cherche une position confortable" —
+// AthleteProfile.goal='comfort' repasse tronc/genou en avertissement (même convention que le
+// poignet, non sourcé -> jamais exclusoire) sans changer la hanche (perte de puissance mesurée,
+// indépendante du style visé).
+describe("AthleteProfile.goal — 'comfort' assouplit tronc/genou sans toucher à la hanche", () => {
+  const aero: AthleteProfile = { hipFlexibilityScore: 3 }; // goal absent -> 'aero' par défaut
+  const comfort: AthleteProfile = { hipFlexibilityScore: 3, goal: 'comfort' };
+
+  test("tronc à 35° (hors [5,15]) : exclusoire en 'aero', avertissement en 'comfort'", () => {
+    const angles = mkTrial('x', 46, 35, 700, 0, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 }).angles;
+    const vAero = validateTrial(angles, aero);
+    assert.equal(vAero.valid, false);
+    assert.equal(vAero.violations[0]?.param, 'trunk_max');
+
+    const vComfort = validateTrial(angles, comfort);
+    assert.equal(vComfort.valid, true);
+    assert.equal(vComfort.violations.length, 0);
+    assert.equal(vComfort.warnings.some((w) => w.param === 'trunk_max'), true);
+  });
+
+  test("genou hors plage : exclusoire en 'aero', avertissement en 'comfort'", () => {
+    const angles = {
+      hip: { mean: 46, min: 43, max: 49, amplitude: 6, variance: 1 },
+      trunk: { mean: 10, min: 8, max: 12, amplitude: 4, variance: 0.5 },
+      knee: { mean: 133, min: 130, max: 145, amplitude: 15, variance: 0.5 }, // min 130 < KNEE_MIN 137
+      ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
+      wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+    };
+    const vAero = validateTrial(angles, aero);
+    assert.equal(vAero.valid, false);
+    assert.equal(vAero.violations[0]?.param, 'knee_range');
+
+    const vComfort = validateTrial(angles, comfort);
+    assert.equal(vComfort.valid, true);
+    assert.equal(vComfort.warnings.some((w) => w.param === 'knee_range'), true);
+  });
+
+  test("hanche sous 40° : reste exclusoire même en 'comfort' (perte de puissance, pas un style)", () => {
+    const angles = mkTrial('x', 36, 10, 700, 0, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 }).angles;
+    const vComfort = validateTrial(angles, comfort);
+    assert.equal(vComfort.valid, false);
+    assert.equal(vComfort.violations[0]?.param, 'hip_floor');
+  });
+
+  test("computeComfortScore : tronc à 35° ne coûte aucun point en 'comfort', coûte des points en 'aero'", () => {
+    const weights: SubjectiveWeights = { neck: 1, lowerBack: 1, hands: 1, knees: 1 };
+    const t = mkTrial('x', 46, 35, 700, 0, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 });
+    const scoreAero = computeComfortScore(t, aero, weights);
+    const scoreComfort = computeComfortScore(t, comfort, weights);
+    assert.ok(scoreComfort > scoreAero, `attendu comfort(${scoreComfort}) > aero(${scoreAero})`);
+    // comfort : 100 - 0 (hanche à la cible) - 0 (tronc non pénalisé) - 4 (variance hip+trunk) = 96
+    // aero    : 100 - 0 (hanche) - 40 (tronc, pénalité plafonnée) - 4 (variance) = 56
+    assert.equal(scoreComfort, 96);
+    assert.equal(scoreAero, 56);
   });
 });
 
