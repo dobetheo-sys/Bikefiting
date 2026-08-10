@@ -5,6 +5,9 @@ import {
   extractAslrAngle,
   extractAslrAngleTrace,
   computeManualAslrAngle,
+  computeManualTrialPmh,
+  computeManualTrialPmb,
+  buildManualTrialAngles,
   computePFSA_cm2,
   IDX,
   type PoseFrame,
@@ -208,6 +211,49 @@ describe('computeManualAslrAngle — mesure par 3 taps (hanche/genou/cheville), 
     const bentAnkle: Landmark = { x: knee.x + 0.15, y: knee.y + 0.05, visibility: 0.85 };
     const m = computeManualAslrAngle(hip, knee, bentAnkle);
     assert.ok(m.kneeAngle < 165, `kneeAngle=${m.kneeAngle}, attendu < 165 (genou plié)`);
+  });
+});
+
+describe('mesure manuelle vidéo profil (PMH/PMB) — retour terrain 10/08/2026', () => {
+  // Mêmes coordonnées vérifiées à la main que synthCycleFrames() (voir plus haut) : hanche
+  // attendue ≈45.0°, tronc attendu = 12.0° exact.
+  const shoulder: Landmark = { x: 0.2, y: 0.4862, visibility: 0.95 };
+  const hipPmh: Landmark = { x: 0.5, y: 0.55, visibility: 0.97 };
+  const kneePmh: Landmark = { x: 0.3474, y: 0.3151, visibility: 0.9 };
+
+  test('computeManualTrialPmh : hanche ≈45.0° et tronc = 12.0° (mêmes points que synthCycleFrames vérifiés à la main)', () => {
+    const m = computeManualTrialPmh(shoulder, hipPmh, kneePmh);
+    assert.ok(Math.abs(m.hipAngle - 45) < 1.5, `hipAngle=${m.hipAngle}, attendu ≈45.0°`);
+    assert.equal(m.trunkAngle, 12);
+  });
+
+  // Mêmes points alignés que le test ASLR ci-dessus (genou verrouillé -> 180° exact).
+  const hipPmb: Landmark = { x: 0.5, y: 0.5, visibility: 0.95 };
+  const kneePmb: Landmark = { x: 0.6, y: 0.3268, visibility: 0.9 };
+  const anklePmb: Landmark = { x: 0.7, y: 0.1536, visibility: 0.85 };
+
+  test('computeManualTrialPmb : genou = 180° quand hanche/genou/cheville sont alignés', () => {
+    const m = computeManualTrialPmb(hipPmb, kneePmb, anklePmb);
+    assert.equal(m.kneeAngle, 180);
+  });
+
+  test('buildManualTrialAngles : combine PMH + PMB en TrialAngles (mean=min=max, amplitude/variance=0)', () => {
+    const pmh = computeManualTrialPmh(shoulder, hipPmh, kneePmh);
+    const pmb = computeManualTrialPmb(hipPmb, kneePmb, anklePmb);
+    const angles = buildManualTrialAngles(pmh, pmb);
+
+    assert.equal(angles.hip.mean, pmh.hipAngle);
+    assert.equal(angles.hip.min, pmh.hipAngle);
+    assert.equal(angles.hip.max, pmh.hipAngle);
+    assert.equal(angles.hip.amplitude, 0);
+
+    assert.equal(angles.trunk.mean, pmh.trunkAngle);
+    assert.equal(angles.knee.mean, pmb.kneeAngle);
+    assert.equal(angles.knee.min, pmb.kneeAngle);
+    assert.equal(angles.knee.max, pmb.kneeAngle);
+
+    assert.equal(angles.ankle.amplitude, 0); // jamais de warning qualité en mesure manuelle
+    assert.equal(angles.wrist.mean, 0);
   });
 });
 

@@ -239,6 +239,66 @@ export function computeManualAslrAngle(hip: Landmark, knee: Landmark, ankle: Lan
   };
 }
 
+// ---------- Mesure manuelle vidéo profil (2 images : point mort haut / point mort bas) ----------
+// Même logique que la mesure ASLR ci-dessus, étendue à la vidéo profil (retour terrain,
+// 10/08/2026, suite : "il y a une erreur dans le calcul du logiciel, laisse l'utilisateur faire
+// lui-même les mesures" — un essai réel a donné un angle de tronc de 43°, bien au-delà de ce
+// qu'une position sur vélo peut produire, révélant que la détection automatique se trompait
+// aussi sur cette vidéo, pas seulement sur l'ASLR).
+//
+// extractTrialAngles() ci-dessus calcule des statistiques (mean/min/max/amplitude/variance) sur
+// tout le cycle de pédalage à partir de frames échantillonnées automatiquement. En mesure
+// manuelle, on ne demande à l'utilisateur que les 2 images cliniquement significatives d'un tour
+// de pédale :
+//   - le point mort haut (PMH) : cuisse la plus proche du buste -> hanche la plus fermée (c'est
+//     la valeur qui compte pour la contrainte HIP_FLOOR_ABS et le score confort), et le tronc y
+//     est mesuré (position relativement stable sur un cycle stable, donc représentatif).
+//   - le point mort bas (PMB) : jambe la plus tendue -> genou le plus extension (c'est la valeur
+//     qui compte pour la plage KNEE_MIN/KNEE_MAX).
+// L'angle de cheville (ANKLE_FLAG) n'est qu'un warning qualité non-bloquant basé sur une
+// amplitude sur tout le cycle — pas mesurable de façon fiable à la main sur 2 images fixes, donc
+// volontairement pas demandé ici (buildManualTrialAngles renvoie une amplitude de 0, qui ne
+// déclenche jamais ce warning plutôt que d'inventer une fausse précision).
+
+export interface ManualTrialPmhMeasurement {
+  hipAngle: number; // angleAt(épaule, hanche, genou) au point mort haut
+  trunkAngle: number; // tronc vs horizontale, au point mort haut
+}
+
+export function computeManualTrialPmh(shoulder: Landmark, hip: Landmark, knee: Landmark): ManualTrialPmhMeasurement {
+  return {
+    hipAngle: r1(angleAt(shoulder, hip, knee)),
+    trunkAngle: r1(angleVsHorizontal(hip, shoulder)),
+  };
+}
+
+export interface ManualTrialPmbMeasurement {
+  kneeAngle: number; // angleAt(hanche, genou, cheville) au point mort bas
+}
+
+export function computeManualTrialPmb(hip: Landmark, knee: Landmark, ankle: Landmark): ManualTrialPmbMeasurement {
+  return { kneeAngle: r1(angleAt(hip, knee, ankle)) };
+}
+
+function fixedStat(value: number): AngleStats {
+  // Mesure manuelle = une seule valeur, pas une distribution sur un cycle : min = max = mean,
+  // amplitude et variance à 0 (pas mesurées). C'est un choix délibéré, pas une approximation
+  // cachée — la seule chose que le moteur regarde pour hip/trunk/knee est mean (+ min/max pour
+  // knee), donc ça reste sémantiquement correct pour valider la position.
+  return { mean: value, min: value, max: value, amplitude: 0, variance: 0 };
+}
+
+export function buildManualTrialAngles(pmh: ManualTrialPmhMeasurement, pmb: ManualTrialPmbMeasurement): TrialAngles {
+  const zero: AngleStats = { mean: 0, min: 0, max: 0, amplitude: 0, variance: 0 };
+  return {
+    hip: fixedStat(pmh.hipAngle),
+    trunk: fixedStat(pmh.trunkAngle),
+    knee: fixedStat(pmb.kneeAngle),
+    ankle: zero, // non mesuré manuellement (warning qualité non-bloquant, cf. commentaire ci-dessus)
+    wrist: zero, // stub existant, cf. limite MediaPipe Hands documentée en tête de fichier
+  };
+}
+
 // ---------- pFSA depuis un masque de silhouette calibré ----------
 
 export interface BinaryMask {
