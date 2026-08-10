@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Crosshair, Upload, Lock } from 'lucide-react';
+import { Video, Camera, Square, RotateCcw, Undo2, Check, AlertTriangle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Crosshair, Upload, Lock } from 'lucide-react';
 import {
   computeManualAslrAngle,
   computeManualTrialPmh,
@@ -227,9 +227,18 @@ function TapLoupe({ imgRef, pos, color }) {
 // au relâchement plutôt qu'au clic pour laisser le temps d'ajuster la position. `size` est la
 // résolution réelle de l'image (naturalWidth/naturalHeight), utilisée à la fois pour convertir
 // les coordonnées écran -> image et pour le crop de la loupe.
-function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, color = '#22d3ee' }) {
+//
+// Retour terrain : "améliorer la manière de poser les points" -> deux manques précis. (1) Pas de
+// correction ciblée : un point mal placé obligeait à tout recommencer (Recommencer efface tout)
+// ou à reprendre toute la photo/vidéo (Reprendre). (2) La loupe ne servait qu'au moment de poser
+// un NOUVEAU point : une fois le point commité, impossible de re-zoomer dessus pour vérifier ou
+// corriger son emplacement exact. Solution : un point déjà posé se glisse (touche dessus, puis
+// déplace) exactement comme lors de sa pose initiale, loupe comprise — au lieu d'ajouter un mode
+// "édition" séparé, poser et corriger un point utilisent le même geste.
+function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMovePoint, color = '#22d3ee' }) {
   const imgRef = useRef(null);
   const [loupe, setLoupe] = useState(null);
+  const [dragIndex, setDragIndex] = useState(null);
 
   const posFromEvent = (e) => {
     if (!imgRef.current || !size) return null;
@@ -244,13 +253,57 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, color
     };
   };
 
-  const handlePointerActive = (e) => {
-    if (points.length >= maxPoints) return;
+  // Le marqueur visuel ne fait que 12px, trop petit pour viser fiablement au doigt — on élargit
+  // la zone de détection pour "attraper" un point existant, sans la faire déborder sur le point
+  // voisin le plus proche vu la densité de points sur certaines images (ex. 3 points PMH proches).
+  const HIT_RADIUS_PX = 22;
+
+  const hitTestPoint = (screenX, screenY) => {
+    if (!size || !onMovePoint) return null;
+    const rect = imgRef.current.getBoundingClientRect();
+    let closestIndex = null;
+    let closestDist = HIT_RADIUS_PX;
+    points.forEach((p, i) => {
+      const dist = Math.hypot((p.x / size.width) * rect.width - screenX, (p.y / size.height) * rect.height - screenY);
+      if (dist <= closestDist) {
+        closestIndex = i;
+        closestDist = dist;
+      }
+    });
+    return closestIndex;
+  };
+
+  const handlePointerDown = (e) => {
     const pos = posFromEvent(e);
-    if (pos) setLoupe(pos);
+    if (!pos) return;
+    const hit = hitTestPoint(pos.screenX, pos.screenY);
+    if (hit !== null) {
+      setDragIndex(hit);
+      setLoupe(pos);
+      return;
+    }
+    if (points.length >= maxPoints) return;
+    setLoupe(pos);
+  };
+
+  const handlePointerMove = (e) => {
+    const pos = posFromEvent(e);
+    if (!pos) return;
+    if (dragIndex !== null) {
+      setLoupe(pos);
+      onMovePoint(dragIndex, pos.imgX, pos.imgY);
+      return;
+    }
+    if (points.length >= maxPoints || !loupe) return;
+    setLoupe(pos);
   };
 
   const handlePointerUp = (e) => {
+    if (dragIndex !== null) {
+      setDragIndex(null);
+      setLoupe(null);
+      return;
+    }
     if (points.length >= maxPoints) return;
     const pos = posFromEvent(e) ?? loupe;
     setLoupe(null);
@@ -261,10 +314,10 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, color
     <div
       className="relative max-w-full max-h-full"
       style={{ touchAction: 'none' }}
-      onPointerDown={handlePointerActive}
-      onPointerMove={handlePointerActive}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={() => setLoupe(null)}
+      onPointerCancel={() => { setLoupe(null); setDragIndex(null); }}
     >
       <img ref={imgRef} src={src} alt={alt} draggable={false} className="max-w-full max-h-full select-none cursor-crosshair" />
       {size && points.map((p, i) => (
@@ -273,7 +326,10 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, color
           className="absolute flex flex-col items-center pointer-events-none"
           style={{ left: `${(p.x / size.width) * 100}%`, top: `${(p.y / size.height) * 100}%`, transform: 'translate(-50%,-50%)' }}
         >
-          <div className="w-3 h-3 rounded-full border-2 border-neutral-950" style={{ background: color }} />
+          <div
+            className="rounded-full border-2 border-neutral-950"
+            style={{ width: i === dragIndex ? 16 : 12, height: i === dragIndex ? 16 : 12, background: color, boxShadow: onMovePoint ? '0 0 0 6px rgba(255,255,255,0.08)' : 'none' }}
+          />
           {pointLabels?.[i] && (
             <span className="mt-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] whitespace-nowrap" style={{ color }}>
               {pointLabels[i]}
@@ -949,6 +1005,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             <p className="text-xs text-neutral-500 mt-1">
               {measurePoints.length}/{measureMaxPoints} points placés
               {currentMeasureStep.pointLabels[measurePoints.length] ? ` · prochain : ${currentMeasureStep.pointLabels[measurePoints.length]}` : ''}
+              {measurePoints.length > 0 ? ' · glisse un point déjà posé pour le corriger' : ''}
             </p>
           </div>
 
@@ -961,6 +1018,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               pointLabels={currentMeasureStep.pointLabels}
               maxPoints={measureMaxPoints}
               onTap={(x, y) => setMeasurePoints((prev) => [...prev, { x, y }])}
+              onMovePoint={(i, x, y) => setMeasurePoints((prev) => prev.map((p, idx) => (idx === i ? { x, y } : p)))}
             />
           </div>
 
@@ -998,13 +1056,16 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             )}
 
             <div className="flex gap-3">
+              <button onClick={() => setMeasurePoints((prev) => prev.slice(0, -1))} disabled={measurePoints.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400">
+                <Undo2 className="w-4 h-4" /> Dernier point
+              </button>
               <button onClick={() => setMeasurePoints([])} disabled={measurePoints.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400">
                 <RotateCcw className="w-4 h-4" /> Recommencer
               </button>
-              <button onClick={backToReview} className="flex-1 py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
-                Changer d'image
-              </button>
             </div>
+            <button onClick={backToReview} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+              Changer d'image
+            </button>
             <button
               onClick={finishMeasureStep}
               disabled={!measureResult}
@@ -1027,7 +1088,9 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             <p className="text-sm text-neutral-200">
               Touche 2 points correspondant à une longueur connue (ex. les deux extrémités du cintre).
             </p>
-            <p className="text-xs text-neutral-500 mt-1">{taps.length}/2 points placés</p>
+            <p className="text-xs text-neutral-500 mt-1">
+              {taps.length}/2 points placés{taps.length > 0 ? ' · glisse un point déjà posé pour le corriger' : ''}
+            </p>
           </div>
 
           <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
@@ -1038,6 +1101,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               points={taps}
               maxPoints={2}
               onTap={(x, y) => setTaps((prev) => [...prev, { x, y }])}
+              onMovePoint={(i, x, y) => setTaps((prev) => prev.map((p, idx) => (idx === i ? { x, y } : p)))}
             />
           </div>
 
@@ -1059,17 +1123,20 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             )}
 
             <div className="flex gap-3">
+              <button onClick={() => setTaps((prev) => prev.slice(0, -1))} disabled={taps.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400">
+                <Undo2 className="w-4 h-4" /> Dernier point
+              </button>
               <button onClick={retake} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
                 <RotateCcw className="w-4 h-4" /> Reprendre
               </button>
-              <button
-                onClick={finish}
-                disabled={taps.length < 2}
-                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan-200"
-              >
-                <Check className="w-4 h-4" /> Valider l'étalonnage
-              </button>
             </div>
+            <button
+              onClick={finish}
+              disabled={taps.length < 2}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan-200"
+            >
+              <Check className="w-4 h-4" /> Valider l'étalonnage
+            </button>
           </div>
         </div>
       )}
