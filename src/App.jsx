@@ -21,26 +21,28 @@ import {
 import PostureCaptureFlow from './components/PostureCaptureFlow.jsx';
 import { getVisionFileset } from './capture/mediapipe-vision';
 import { createBikeFitSegmenter, toBikeFitBinaryMask } from './capture/segmentation-integration';
-import { createBikeFitPoseLandmarker, toPoseFrame } from './capture/pose-integration';
-import { sampleVideoFrames } from './capture/video-frame-sampler';
-import { computePFSA_cm2, extractTrialAngles, KNEE_STRAIGHT_THRESHOLD } from './capture/capture-processing';
+import { computePFSA_cm2, KNEE_STRAIGHT_THRESHOLD } from './capture/capture-processing';
 import { aslrToFlexScore, runEngine } from './engine/posture-aero-engine';
 
 // App.jsx — orchestre toute la session : test de souplesse (ASLR) -> profil athlète ->
 // essais (vidéo profil + photo frontale + deltas matériel) -> runEngine (validation,
 // score, sélection Pareto). Voir spec §2/§3.1/§6 pour le protocole complet.
 //
-// Le test ASLR est mesuré MANUELLEMENT (3 taps de l'utilisateur sur une image de sa propre
-// vidéo, cf. PostureCaptureFlow.jsx + capture-processing.ts/computeManualAslrAngle) — pas de
-// pipeline MediaPipe pour cette étape. handleAslrCaptured ci-dessous reçoit directement l'angle
-// déjà calculé, contrairement à handleTrialVideoCaptured/handleTrialPhotoCaptured qui pilotent
-// encore la détection automatique (vidéo profil, photo frontale).
+// Le test ASLR ET la vidéo profil sont mesurés MANUELLEMENT (l'utilisateur touche des points
+// sur des images choisies dans sa propre vidéo, cf. PostureCaptureFlow.jsx +
+// capture-processing.ts/computeManualAslrAngle+computeManualTrialPmh+computeManualTrialPmb) —
+// pas de pipeline MediaPipe pour ces deux étapes. handleAslrCaptured et handleTrialVideoCaptured
+// ci-dessous reçoivent directement le résultat déjà calculé, sans passer par un état "busy"
+// asynchrone. Seule la photo frontale (handleTrialPhotoCaptured) pilote encore un modèle ML
+// (segmentation, via processFrontalPhoto) — la segmentation d'une silhouette entière sur fond
+// fixe étant un problème bien mieux posé que la détection de landmarks sur une vidéo, cf.
+// PostureCaptureFlow.jsx pour l'historique des échecs de détection automatique qui ont motivé
+// ce choix (retours terrain 08-11/08/2026).
 //
 // subjective_multiplier (§7, boucle de feedback) : pas de questionnaire post-sortie ici,
 // on reste sur les poids neutres (1.0 partout) — recalibrateWeights() existe et est testé
 // dans le moteur mais brancher une vraie boucle de feedback est hors scope de cette étape.
 
-const TRIAL_SAMPLE_COUNT = 30; // frames échantillonnées sur la vidéo profil (cycle de pédalage)
 const NEUTRAL_WEIGHTS = { neck: 1, lowerBack: 1, hands: 1, knees: 1 };
 
 // Persistance de session (retour terrain : un plantage du navigateur en pleine capture
@@ -67,43 +69,6 @@ function initialStageFor(saved) {
   // terrain (08/08/2026), un même "0°" obsolète réapparaissait à chaque réouverture. Refaire
   // le test ASLR est rapide ; rester coincé sur un résultat périmé est pire.
   return 'aslr-capture';
-}
-
-// Lecture accélérée pendant l'échantillonnage (retour terrain : l'analyse en temps réel
-// d'une vidéo de 15-20s se sentait très longue) — voir video-frame-sampler.ts pour la
-// justification du facteur retenu.
-const SAMPLING_PLAYBACK_RATE = 4;
-
-async function samplePoseFramesFromVideo(blob, sampleCount, onProgress, onModelReady) {
-  const fileset = await getVisionFileset();
-  const landmarker = await createBikeFitPoseLandmarker(fileset);
-  onModelReady?.();
-  try {
-    const frames = [];
-    await sampleVideoFrames(
-      blob,
-      sampleCount,
-      ({ video, timestampMs }) => {
-        const result = landmarker.detectForVideo(video, timestampMs);
-        const frame = toPoseFrame(result, timestampMs);
-        if (frame) frames.push(frame);
-      },
-      { playbackRate: SAMPLING_PLAYBACK_RATE, onProgress }
-    );
-    return frames;
-  } finally {
-    landmarker.close();
-  }
-}
-
-async function processProfileVideoTrial(blob, onProgress, onModelReady) {
-  const frames = await samplePoseFramesFromVideo(blob, TRIAL_SAMPLE_COUNT, onProgress, onModelReady);
-  if (frames.length === 0) {
-    throw new Error(
-      "On n'a pas réussi à te repérer sur cette vidéo. Vérifie que tout le corps est visible et qu'il y a assez de lumière, puis réessaie."
-    );
-  }
-  return extractTrialAngles(frames);
 }
 
 async function processFrontalPhoto(blob, calibration) {
@@ -920,26 +885,12 @@ export default function App() {
     setStage('session');
   }, [pendingTrial]);
 
-  const handleTrialVideoCaptured = useCallback(
-    async (payload) => {
-      if (!payload.blob) return fail(new Error("La capture n'a pas abouti, réessaie."));
-      setBusy('Chargement du modèle d’analyse…');
-      setBusyProgress(null);
-      try {
-        const angles = await processProfileVideoTrial(
-          payload.blob,
-          (current, total) => setBusyProgress({ current, total }),
-          () => setBusy('Analyse de la vidéo profil…')
-        );
-        setPendingTrial((prev) => ({ ...prev, angles }));
-        setBusy(null);
-        setStage('trial-overview');
-      } catch (e) {
-        fail(e);
-      }
-    },
-    [fail]
-  );
+  // Mesure manuelle (points mort haut/bas, cf. PostureCaptureFlow.jsx) — angles déjà calculés,
+  // pas de pipeline MediaPipe à attendre ici, donc pas d'écran d'attente pour cette étape.
+  const handleTrialVideoCaptured = useCallback((payload) => {
+    setPendingTrial((prev) => ({ ...prev, angles: payload.angles }));
+    setStage('trial-overview');
+  }, []);
 
   const handleTrialPhotoCaptured = useCallback(
     async (payload) => {

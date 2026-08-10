@@ -1,26 +1,38 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp, Crosshair, Upload, Lock } from 'lucide-react';
-import { computeManualAslrAngle, KNEE_STRAIGHT_THRESHOLD } from '../capture/capture-processing';
+import {
+  computeManualAslrAngle,
+  computeManualTrialPmh,
+  computeManualTrialPmb,
+  buildManualTrialAngles,
+  KNEE_STRAIGHT_THRESHOLD,
+} from '../capture/capture-processing';
 
 // posture-capture-flow.jsx
 // Flux de capture réel (caméra du téléphone) pour les entrées du pipeline §2 du spec :
-//   A. vidéo profil (angles articulaires) — détection MediaPipe automatique, traitée dans
-//      App.jsx après capture
+//   A. vidéo profil (angles articulaires) — mesure MANUELLE en 2 images (point mort haut /
+//      point mort bas), voir MANUAL_MEASURE_STEPS ci-dessous
 //   B. photo frontale + étalonnage par 2 taps (pFSA)
-//   C. test de souplesse ASLR — mesure MANUELLE par 3 taps (hanche/genou/cheville) sur une
-//      image choisie par l'utilisateur dans sa propre vidéo. Retour terrain (10/08/2026) :
-//      la détection auto MediaPipe a échoué de façon répétée sur ce cas précis (sujet allongé
-//      au sol, filmé de loin/au ras du sol — hors du cas standard "personne debout, cadrée
-//      serré") malgré plusieurs corrections. Plutôt que de continuer à durcir un pipeline
-//      auto peu fiable, l'utilisateur mesure lui-même — plus simple et plus robuste pour ce
-//      cas, cf. capture-processing.ts (computeManualAslrAngle) pour la géométrie.
+//   C. test de souplesse ASLR — mesure MANUELLE en 1 image (jambe la plus haute)
 //
-// Pour A et B, ce composant s'arrête à la capture + étalonnage : il appelle
+// A et C partagent le même mécanisme générique (MANUAL_MEASURE_STEPS + screens 'review' puis
+// 'measure') : l'utilisateur choisit lui-même la ou les images significatives dans sa propre
+// vidéo et touche quelques points dessus — pas de détection automatique. Retour terrain
+// (10-11/08/2026) : la détection auto MediaPipe a échoué de façon répétée, d'abord sur l'ASLR
+// (sujet allongé au sol, filmé de loin/au ras du sol — hors du cas standard "personne debout,
+// cadrée serré"), puis sur la vidéo profil elle-même (un essai réel a donné un angle de tronc
+// de 43°, clairement faux). Plutôt que de continuer à durcir un pipeline auto peu fiable,
+// l'utilisateur mesure lui-même pour les deux — cf. capture-processing.ts
+// (computeManualAslrAngle / computeManualTrialPmh / computeManualTrialPmb) pour la géométrie.
+//
+// Pour B (frontal_photo), ce composant s'arrête à la capture + étalonnage : il appelle
 // `onCaptured({ mode, blob, meta, calibration })` puis rend la main à l'appelant, qui pilote
-// l'inférence (App.jsx, via capture-processing.ts et segmentation-integration.ts/
-// pose-integration.ts). Pour C (aslr_test), ce composant va jusqu'au bout de la mesure
-// lui-même et appelle `onCaptured({ mode: 'aslr_test', angle, kneeAngle })` — pas de blob,
-// pas de pipeline ML à exécuter côté appelant pour ce mode.
+// l'inférence de segmentation (App.jsx, via segmentation-integration.ts) — seule étape qui
+// utilise encore un modèle ML, la segmentation d'une silhouette entière sur fond fixe étant un
+// problème bien mieux posé que la détection de landmarks sur une vidéo. Pour A et C, ce
+// composant va jusqu'au bout de la mesure lui-même : `onCaptured({ mode: 'aslr_test', angle,
+// kneeAngle })` ou `onCaptured({ mode: 'profile_video', angles })` (déjà au format TrialAngles
+// attendu par le moteur) — pas de blob, pas de pipeline ML à exécuter côté appelant.
 //
 // Point d'incertitude non résolu (cf. HANDOFF_CLAUDE_CODE.md, tâche 2) : le niveau/tilt
 // (DeviceOrientationEvent) peut nécessiter DeviceOrientationEvent.requestPermission() sur
@@ -37,7 +49,7 @@ const MODES = {
       'Recul d\u2019environ 3-4 m, caméra à hauteur de hanche (ni au sol ni en hauteur, ça fausse les angles)',
       'Cadrage : vélo + corps entier visibles',
       'Même réglage vélo qu\u2019à l\u2019essai précédent si tu compares',
-      'Effort stable, plusieurs tours de pédalage complets (au moins 5) pendant l\u2019enregistrement',
+      'Pédale à rythme modéré, plusieurs tours complets (au moins 5) : tu choisiras ensuite 2 images (pédale en haut, pédale en bas) pour mesurer les angles toi-même',
     ],
   },
   frontal_photo: {
@@ -72,8 +84,45 @@ const VIDEO_MODES = new Set(['profile_video', 'aslr_test']);
 // natif, quel que soit le type de média.
 const IMPORT_FIRST_MODES = new Set(['profile_video', 'aslr_test', 'frontal_photo']);
 
-// Ordre des 3 taps de la mesure manuelle ASLR (screen 'measure') — voir computeManualAslrAngle.
-const ASLR_POINT_LABELS = ['hanche', 'genou', 'cheville'];
+// Configuration des étapes de mesure manuelle par mode — chaque étape correspond à UNE image
+// que l'utilisateur choisit dans sa vidéo (via l'écran 'review', bouton `pickButtonLabel`) puis
+// tape `pointLabels.length` points dessus (écran 'measure', dans cet ordre). `compute` calcule
+// le résultat de l'étape à partir des points tapés (voir capture-processing.ts). Les modes
+// absents de cet objet (frontal_photo) gardent l'ancien flux caméra -> review -> finish().
+const MANUAL_MEASURE_STEPS = {
+  aslr_test: [
+    {
+      key: 'raise',
+      frameInstruction: "Utilise les contrôles pour trouver l'image où ta jambe testée est le plus haut, genou tendu.",
+      pickButtonLabel: 'Choisir cette image',
+      pointLabels: ['hanche', 'genou', 'cheville'],
+      compute: (pts) => computeManualAslrAngle(pts[0], pts[1], pts[2]),
+    },
+  ],
+  profile_video: [
+    {
+      key: 'pmh',
+      frameInstruction: "Trouve l'image où la pédale du côté filmé est tout en haut (point mort haut) : cuisse la plus proche du buste.",
+      pickButtonLabel: 'Choisir cette image (point haut)',
+      pointLabels: ['épaule', 'hanche', 'genou'],
+      compute: (pts) => computeManualTrialPmh(pts[0], pts[1], pts[2]),
+    },
+    {
+      key: 'pmb',
+      frameInstruction: "Trouve l'image où la pédale du côté filmé est tout en bas (point mort bas) : jambe la plus tendue.",
+      pickButtonLabel: 'Choisir cette image (point bas)',
+      pointLabels: ['hanche', 'genou', 'cheville'],
+      compute: (pts) => computeManualTrialPmb(pts[0], pts[1], pts[2]),
+    },
+  ],
+};
+
+// Assemble le résultat final envoyé à onCaptured à partir des résultats de chaque étape
+// (dans l'ordre de MANUAL_MEASURE_STEPS[mode]).
+const MANUAL_MEASURE_FINALIZE = {
+  aslr_test: (results) => ({ angle: results[0].angle, kneeAngle: results[0].kneeAngle }),
+  profile_video: (results) => ({ angles: buildManualTrialAngles(results[0], results[1]) }),
+};
 
 // Mémorise la longueur du repère d'étalonnage (ex. largeur de cintre) d'une capture à
 // l'autre — c'est en général toujours le même repère, pas la peine de le retaper.
@@ -139,12 +188,14 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const [tilt, setTilt] = useState(null);
   const [tiltOffset, setTiltOffset] = useState(0);
   const [captureUi, setCaptureUi] = useState('import'); // 'import' | 'live'
-  // Mesure manuelle ASLR (screen 'measure') : image fixe choisie dans la vidéo + 3 points
-  // tapés dessus (hanche, genou, cheville) — indépendant de `taps`/`capturedUrl` qui servent
-  // à l'étalonnage de la photo frontale.
-  const [aslrStillUrl, setAslrStillUrl] = useState(null);
-  const [aslrStillSize, setAslrStillSize] = useState(null);
-  const [aslrPoints, setAslrPoints] = useState([]);
+  // Mesure manuelle générique (screen 'measure', cf. MANUAL_MEASURE_STEPS) : image fixe
+  // choisie dans la vidéo pour l'étape courante + points tapés dessus — indépendant de
+  // `taps`/`capturedUrl` qui servent à l'étalonnage de la photo frontale.
+  const [measureStepIndex, setMeasureStepIndex] = useState(0);
+  const [measureStillUrl, setMeasureStillUrl] = useState(null);
+  const [measureStillSize, setMeasureStillSize] = useState(null);
+  const [measurePoints, setMeasurePoints] = useState([]);
+  const [measureResults, setMeasureResults] = useState([]); // résultats des étapes déjà validées
 
   const videoRef = useRef(null);
   const reviewVideoRef = useRef(null);
@@ -156,6 +207,11 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const startedAtRef = useRef(0);
   const capturedBlobRef = useRef(null);
   const wakeLockRef = useRef(null);
+
+  const manualSteps = MANUAL_MEASURE_STEPS[mode] ?? [];
+  const currentMeasureStep = manualSteps[measureStepIndex] ?? null;
+  const measureMaxPoints = currentMeasureStep?.pointLabels.length ?? 0;
+  const measureResult = currentMeasureStep && measurePoints.length === measureMaxPoints ? currentMeasureStep.compute(measurePoints) : null;
 
   const releaseWakeLock = useCallback(() => {
     wakeLockRef.current?.release().catch(() => {});
@@ -361,12 +417,16 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   };
 
   const retake = () => {
+    // Reprendre la capture entière invalide toute progression de mesure déjà faite (les
+    // images choisies venaient de l'ancienne vidéo) — repart de l'étape 0.
     setCapturedUrl(null);
     setCapturedMeta(null);
     setTaps([]);
-    setAslrStillUrl(null);
-    setAslrStillSize(null);
-    setAslrPoints([]);
+    setMeasureStepIndex(0);
+    setMeasureResults([]);
+    setMeasureStillUrl(null);
+    setMeasureStillSize(null);
+    setMeasurePoints([]);
     setScreen('camera');
   };
 
@@ -391,11 +451,12 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
     });
   };
 
-  // Test de souplesse ASLR uniquement : au lieu de "Valider" la vidéo entière (finish), on fige
-  // l'image affichée à l'instant où l'utilisateur a mis pause/navigué avec les contrôles natifs
-  // du <video> — c'est à lui de trouver le bon moment (jambe la plus haute, genou tendu), pas à
-  // un modèle de détecter automatiquement.
-  const captureStillFromReview = () => {
+  // Étape de mesure manuelle en cours (ASLR ou vidéo profil) : au lieu de "Valider" la vidéo
+  // entière (finish), on fige l'image affichée à l'instant où l'utilisateur a mis pause/navigué
+  // avec les contrôles natifs du <video> — c'est à lui de trouver le bon moment (jambe la plus
+  // haute pour l'ASLR, point mort haut/bas pour la vidéo profil), pas à un modèle de détecter
+  // automatiquement.
+  const captureMeasureFrame = () => {
     const video = reviewVideoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !video.videoWidth) return;
@@ -403,41 +464,55 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
     canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
     canvas.toBlob((blob) => {
-      setAslrStillUrl(URL.createObjectURL(blob));
-      setAslrStillSize({ width: canvas.width, height: canvas.height });
-      setAslrPoints([]);
+      setMeasureStillUrl(URL.createObjectURL(blob));
+      setMeasureStillSize({ width: canvas.width, height: canvas.height });
+      setMeasurePoints([]);
       setScreen('measure');
     }, 'image/jpeg', 0.92);
   };
 
   const handleMeasureTap = (e) => {
-    if (aslrPoints.length >= 3 || !aslrStillSize) return;
+    if (measurePoints.length >= measureMaxPoints || !measureStillSize) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * aslrStillSize.width;
-    const y = ((e.clientY - rect.top) / rect.height) * aslrStillSize.height;
-    setAslrPoints((prev) => [...prev, { x, y }]);
+    const x = ((e.clientX - rect.left) / rect.width) * measureStillSize.width;
+    const y = ((e.clientY - rect.top) / rect.height) * measureStillSize.height;
+    setMeasurePoints((prev) => [...prev, { x, y }]);
   };
 
-  const aslrMeasurement = aslrPoints.length === 3 ? computeManualAslrAngle(aslrPoints[0], aslrPoints[1], aslrPoints[2]) : null;
-
+  // Revenir choisir une autre image pour l'étape en cours (pas un redémarrage complet — la
+  // vidéo source et les étapes déjà validées restent intactes).
   const backToReview = () => {
-    setAslrPoints([]);
+    setMeasurePoints([]);
     setScreen('review');
   };
 
-  const finishManualAslr = () => {
-    if (!aslrMeasurement) return;
+  const finishMeasureStep = () => {
+    if (!measureResult) return;
+    const allResults = [...measureResults, measureResult];
+    if (measureStepIndex + 1 < manualSteps.length) {
+      // Étape suivante (ex. ASLR: aucune ; vidéo profil : PMH -> PMB) : retour à l'écran de
+      // review pour choisir la prochaine image, sur la même vidéo déjà capturée.
+      setMeasureResults(allResults);
+      setMeasureStepIndex((i) => i + 1);
+      setMeasurePoints([]);
+      setMeasureStillUrl(null);
+      setMeasureStillSize(null);
+      setScreen('review');
+      return;
+    }
     stopStream();
-    onCaptured?.({ mode, angle: aslrMeasurement.angle, kneeAngle: aslrMeasurement.kneeAngle });
+    onCaptured?.({ mode, ...MANUAL_MEASURE_FINALIZE[mode](allResults) });
   };
 
   const startOver = () => {
     setCapturedUrl(null);
     setCapturedMeta(null);
     setTaps([]);
-    setAslrStillUrl(null);
-    setAslrStillSize(null);
-    setAslrPoints([]);
+    setMeasureStepIndex(0);
+    setMeasureResults([]);
+    setMeasureStillUrl(null);
+    setMeasureStillSize(null);
+    setMeasurePoints([]);
     setMode(null);
     setError(null);
     setScreen('intro');
@@ -645,11 +720,14 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
 
       {screen === 'review' && (
         <div className="flex-1 flex flex-col">
-          {mode === 'aslr_test' && (
+          {currentMeasureStep && (
             <div className="px-6 py-3 bg-neutral-900 border-b border-neutral-800">
-              <p className="text-sm text-neutral-200">
-                Utilise les contrôles pour trouver l'image où ta jambe testée est le plus haut, genou tendu.
-              </p>
+              {manualSteps.length > 1 && (
+                <p className="text-xs text-amber-400 uppercase tracking-wide mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                  Étape {measureStepIndex + 1}/{manualSteps.length}
+                </p>
+              )}
+              <p className="text-sm text-neutral-200">{currentMeasureStep.frameInstruction}</p>
             </div>
           )}
           <div className="flex-1 bg-black flex items-center justify-center">
@@ -663,9 +741,9 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               <button onClick={retake} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
                 <RotateCcw className="w-4 h-4" /> Reprendre
               </button>
-              {mode === 'aslr_test' ? (
-                <button onClick={captureStillFromReview} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200">
-                  <Check className="w-4 h-4" /> Choisir cette image
+              {currentMeasureStep ? (
+                <button onClick={captureMeasureFrame} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200">
+                  <Check className="w-4 h-4" /> {currentMeasureStep.pickButtonLabel}
                 </button>
               ) : (
                 <button onClick={finish} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200">
@@ -677,59 +755,78 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
         </div>
       )}
 
-      {screen === 'measure' && (
+      {screen === 'measure' && currentMeasureStep && (
         <div className="flex-1 flex flex-col">
           <div className="px-6 py-3 bg-neutral-900 border-b border-neutral-800">
             <p className="text-sm text-neutral-200">
-              Touche 3 points dans l'ordre : hanche → genou → cheville (jambe testée).
+              Touche {measureMaxPoints} points dans l'ordre : {currentMeasureStep.pointLabels.join(' → ')}.
             </p>
             <p className="text-xs text-neutral-500 mt-1">
-              {aslrPoints.length}/3 points placés
-              {ASLR_POINT_LABELS[aslrPoints.length] ? ` · prochain : ${ASLR_POINT_LABELS[aslrPoints.length]}` : ''}
+              {measurePoints.length}/{measureMaxPoints} points placés
+              {currentMeasureStep.pointLabels[measurePoints.length] ? ` · prochain : ${currentMeasureStep.pointLabels[measurePoints.length]}` : ''}
             </p>
           </div>
 
           <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
             <img
-              src={aslrStillUrl}
-              alt="Image choisie pour la mesure de souplesse"
+              src={measureStillUrl}
+              alt="Image choisie pour la mesure"
               onClick={handleMeasureTap}
               className="max-w-full max-h-full cursor-crosshair"
             />
-            {aslrStillSize && aslrPoints.map((p, i) => (
+            {measureStillSize && measurePoints.map((p, i) => (
               <div
                 key={i}
                 className="absolute flex flex-col items-center pointer-events-none"
                 style={{
-                  left: `${(p.x / aslrStillSize.width) * 100}%`,
-                  top: `${(p.y / aslrStillSize.height) * 100}%`,
+                  left: `${(p.x / measureStillSize.width) * 100}%`,
+                  top: `${(p.y / measureStillSize.height) * 100}%`,
                   transform: 'translate(-50%,-50%)',
                 }}
               >
                 <div className="w-3 h-3 rounded-full bg-cyan-400 border-2 border-neutral-950" />
                 <span className="mt-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-cyan-200 whitespace-nowrap">
-                  {ASLR_POINT_LABELS[i]}
+                  {currentMeasureStep.pointLabels[i]}
                 </span>
               </div>
             ))}
           </div>
 
           <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-4 space-y-3">
-            {aslrMeasurement && (
-              <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
-                <div className="text-2xl font-semibold text-cyan-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
-                  {aslrMeasurement.angle}°
-                </div>
-                <p className="text-xs text-neutral-500 mt-1">
-                  {aslrMeasurement.kneeAngle < KNEE_STRAIGHT_THRESHOLD
-                    ? `Genou mesuré à ${aslrMeasurement.kneeAngle}° — il a l'air plié sur cette image. Essaie une image où la jambe testée est bien tendue.`
-                    : `Genou mesuré à ${aslrMeasurement.kneeAngle}° (bien tendu).`}
-                </p>
+            {measureResult && (
+              <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 space-y-1">
+                {currentMeasureStep.key === 'raise' && (
+                  <>
+                    <div className="text-2xl font-semibold text-cyan-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                      {measureResult.angle}°
+                    </div>
+                    <p className="text-xs text-neutral-500">
+                      {measureResult.kneeAngle < KNEE_STRAIGHT_THRESHOLD
+                        ? `Genou mesuré à ${measureResult.kneeAngle}° — il a l'air plié sur cette image. Essaie une image où la jambe testée est bien tendue.`
+                        : `Genou mesuré à ${measureResult.kneeAngle}° (bien tendu).`}
+                    </p>
+                  </>
+                )}
+                {currentMeasureStep.key === 'pmh' && (
+                  <>
+                    <div className="text-2xl font-semibold text-amber-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                      Hanche {measureResult.hipAngle}°
+                    </div>
+                    <div className="text-sm text-neutral-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                      Tronc {measureResult.trunkAngle}°
+                    </div>
+                  </>
+                )}
+                {currentMeasureStep.key === 'pmb' && (
+                  <div className="text-2xl font-semibold text-amber-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                    Genou {measureResult.kneeAngle}°
+                  </div>
+                )}
               </div>
             )}
 
             <div className="flex gap-3">
-              <button onClick={() => setAslrPoints([])} disabled={aslrPoints.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400">
+              <button onClick={() => setMeasurePoints([])} disabled={measurePoints.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400">
                 <RotateCcw className="w-4 h-4" /> Recommencer
               </button>
               <button onClick={backToReview} className="flex-1 py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
@@ -737,11 +834,11 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               </button>
             </div>
             <button
-              onClick={finishManualAslr}
-              disabled={!aslrMeasurement}
+              onClick={finishMeasureStep}
+              disabled={!measureResult}
               className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
             >
-              <Check className="w-4 h-4" /> Valider la mesure
+              <Check className="w-4 h-4" /> {measureStepIndex + 1 < manualSteps.length ? 'Valider et passer à l’étape suivante' : 'Valider la mesure'}
             </button>
             {onCancel && (
               <button onClick={onCancel} className="w-full text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
