@@ -244,6 +244,10 @@ function TapLoupe({ imgRef, pos, color }) {
   );
 }
 
+const TAP_IMAGE_ZOOM_MIN = 1;
+const TAP_IMAGE_ZOOM_MAX = 4;
+const TAP_IMAGE_ZOOM_STEP = 0.5;
+
 // Image tapable générique (étalonnage photo frontale, mesure manuelle ASLR/vidéo profil) :
 // affiche une loupe grossissante pendant qu'on place un point (voir TapLoupe), commite le point
 // au relâchement plutôt qu'au clic pour laisser le temps d'ajuster la position. `size` est la
@@ -257,10 +261,31 @@ function TapLoupe({ imgRef, pos, color }) {
 // corriger son emplacement exact. Solution : un point déjà posé se glisse (touche dessus, puis
 // déplace) exactement comme lors de sa pose initiale, loupe comprise — au lieu d'ajouter un mode
 // "édition" séparé, poser et corriger un point utilisent le même geste.
+//
+// Retour terrain suivant : "le nom des points rend la lecture impossible, intègre également un
+// système de zoom". Deux volets : (1) les chips de texte sur les points déjà posés sont réduites
+// et déplacées à côté (pas sous) le point, pour ne plus masquer l'image ni le point voisin sur
+// une zone dense (ex. 3 points PMH proches). (2) Zoom persistant (boutons +/− ou pincement à 2
+// doigts) — le pan associé utilise volontairement un geste à 2 doigts et pas le glisser à 1
+// doigt : ce dernier est déjà pris par "poser/corriger un point", les deux gestes ne peuvent pas
+// partager le même doigt sans ambiguïté. `imgRef.current.getBoundingClientRect()` reflète
+// automatiquement la position/taille APRÈS le transform CSS de zoom/pan (comportement standard
+// du DOM) — posFromEvent/hitTestPoint n'ont donc besoin d'aucun changement pour rester justes.
 function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMovePoint, color = '#22d3ee' }) {
   const imgRef = useRef(null);
+  const viewportRef = useRef(null);
   const [loupe, setLoupe] = useState(null);
   const [dragIndex, setDragIndex] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const pointersRef = useRef(new Map()); // pointerId -> {x,y} en coordonnées écran
+  const panStateRef = useRef(null); // { startMid, startPan } pendant un geste à 2 doigts
+  // Reste vrai tant qu'AU MOINS UN doigt du geste à 2 doigts est encore posé — pas juste
+  // "size >= 2" : les 2 doigts ne se lèvent quasiment jamais à l'exact même instant, donc au
+  // relâchement du premier, pointersRef retombe déjà à 1 avant que le second pointerup n'arrive.
+  // Sans ce flag séparé, ce second relâchement serait pris pour un tap simple et poserait un
+  // point fantôme à l'endroit où le doigt restant a été levé.
+  const multiTouchRef = useRef(false);
 
   const posFromEvent = (e) => {
     if (!imgRef.current || !size) return null;
@@ -295,7 +320,39 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
     return closestIndex;
   };
 
+  // Empêche de faire glisser l'image zoomée entièrement hors champ — approximation sur la
+  // taille du viewport (pas les bords exacts de l'image, dont la taille rendue dépend du
+  // ratio), suffisant pour rester dans les clous sans calcul plus complexe.
+  const clampPan = (nextZoom, nextPan) => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return nextPan;
+    const maxX = (rect.width * (nextZoom - 1)) / 2;
+    const maxY = (rect.height * (nextZoom - 1)) / 2;
+    return {
+      x: Math.min(maxX, Math.max(-maxX, nextPan.x)),
+      y: Math.min(maxY, Math.max(-maxY, nextPan.y)),
+    };
+  };
+
+  const applyZoom = (next) => {
+    const nz = Math.round(Math.min(TAP_IMAGE_ZOOM_MAX, Math.max(TAP_IMAGE_ZOOM_MIN, next)) * 100) / 100;
+    setZoom(nz);
+    setPan((p) => clampPan(nz, p));
+  };
+
   const handlePointerDown = (e) => {
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointersRef.current.size >= 2) {
+      // Un 2e doigt arrive : on abandonne toute pose/déplacement de point en cours, ce geste
+      // devient un déplacement dans l'image zoomée (pan), pas un placement de point.
+      multiTouchRef.current = true;
+      setLoupe(null);
+      setDragIndex(null);
+      const [p1, p2] = [...pointersRef.current.values()];
+      panStateRef.current = { startMid: { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }, startPan: pan };
+      return;
+    }
+    if (multiTouchRef.current) return; // doigt restant d'un geste à 2 doigts déjà en cours
     const pos = posFromEvent(e);
     if (!pos) return;
     const hit = hitTestPoint(pos.screenX, pos.screenY);
@@ -309,6 +366,16 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
   };
 
   const handlePointerMove = (e) => {
+    if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointersRef.current.size >= 2 && panStateRef.current) {
+      const [p1, p2] = [...pointersRef.current.values()];
+      const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+      const dx = mid.x - panStateRef.current.startMid.x;
+      const dy = mid.y - panStateRef.current.startMid.y;
+      setPan(clampPan(zoom, { x: panStateRef.current.startPan.x + dx, y: panStateRef.current.startPan.y + dy }));
+      return;
+    }
+    if (multiTouchRef.current) return; // un doigt du geste à 2 doigts vient de se lever, l'autre bouge encore
     const pos = posFromEvent(e);
     if (!pos) return;
     if (dragIndex !== null) {
@@ -320,7 +387,16 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
     setLoupe(pos);
   };
 
+  const releasePointer = (e) => {
+    pointersRef.current.delete(e.pointerId);
+    if (pointersRef.current.size < 2) panStateRef.current = null;
+    if (pointersRef.current.size === 0) multiTouchRef.current = false;
+  };
+
   const handlePointerUp = (e) => {
+    const wasMultiTouch = multiTouchRef.current;
+    releasePointer(e);
+    if (wasMultiTouch) return;
     if (dragIndex !== null) {
       setDragIndex(null);
       setLoupe(null);
@@ -332,34 +408,93 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
     if (pos) onTap(pos.imgX, pos.imgY);
   };
 
+  const handlePointerCancel = (e) => {
+    releasePointer(e);
+    setLoupe(null);
+    setDragIndex(null);
+  };
+
   return (
     <div
-      className="relative max-w-full max-h-full"
+      ref={viewportRef}
+      className="absolute inset-0 overflow-hidden"
       style={{ touchAction: 'none' }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={() => { setLoupe(null); setDragIndex(null); }}
+      onPointerCancel={handlePointerCancel}
     >
-      <img ref={imgRef} src={src} alt={alt} draggable={false} className="max-w-full max-h-full select-none cursor-crosshair" />
-      {size && points.map((p, i) => (
-        <div
-          key={i}
-          className="absolute flex flex-col items-center pointer-events-none"
-          style={{ left: `${(p.x / size.width) * 100}%`, top: `${(p.y / size.height) * 100}%`, transform: 'translate(-50%,-50%)' }}
-        >
-          <div
-            className="rounded-full border-2 border-neutral-950"
-            style={{ width: i === dragIndex ? 16 : 12, height: i === dragIndex ? 16 : 12, background: color, boxShadow: onMovePoint ? '0 0 0 6px rgba(255,255,255,0.08)' : 'none' }}
-          />
-          {pointLabels?.[i] && (
-            <span className="mt-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] whitespace-nowrap" style={{ color }}>
-              {pointLabels[i]}
-            </span>
-          )}
+      <div
+        className="absolute inset-0 flex items-center justify-center"
+        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center center' }}
+      >
+        <div className="relative max-w-full max-h-full">
+          <img ref={imgRef} src={src} alt={alt} draggable={false} className="max-w-full max-h-full select-none cursor-crosshair" />
+          {size && points.map((p, i) => (
+            <div
+              key={i}
+              className="absolute flex items-center gap-1 pointer-events-none"
+              style={{ left: `${(p.x / size.width) * 100}%`, top: `${(p.y / size.height) * 100}%`, transform: 'translate(-50%,-50%)' }}
+            >
+              <div
+                className="rounded-full border-2 border-neutral-950 shrink-0"
+                style={{ width: i === dragIndex ? 16 : 12, height: i === dragIndex ? 16 : 12, background: color, boxShadow: onMovePoint ? '0 0 0 6px rgba(255,255,255,0.08)' : 'none' }}
+              />
+              {pointLabels?.[i] && (
+                <span className="px-1 rounded bg-black/50 text-[8px] leading-tight whitespace-nowrap" style={{ color }}>
+                  {pointLabels[i]}
+                </span>
+              )}
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
+
       {loupe && size && <TapLoupe imgRef={imgRef} pos={loupe} color={color} />}
+
+      {/* stopPropagation sur pointerDown/Up : sans ça, un tap sur ces boutons remonte jusqu'aux
+          handlers de TapImage (bubbling) et pose un point fantôme sous le bouton. */}
+      <div
+        className="absolute bottom-2 right-2 z-20 flex flex-col items-end gap-1"
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+      >
+        <div className="flex flex-col rounded-lg border border-neutral-700 bg-neutral-950/90 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => applyZoom(zoom + TAP_IMAGE_ZOOM_STEP)}
+            disabled={zoom >= TAP_IMAGE_ZOOM_MAX}
+            className="w-9 h-9 flex items-center justify-center text-neutral-200 text-lg disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400"
+            aria-label="Zoomer"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
+            disabled={zoom === 1}
+            className="w-9 h-9 flex items-center justify-center text-neutral-400 text-[10px] border-y border-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400"
+            style={{ fontFamily: 'ui-monospace, monospace' }}
+            aria-label="Réinitialiser le zoom"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            type="button"
+            onClick={() => applyZoom(zoom - TAP_IMAGE_ZOOM_STEP)}
+            disabled={zoom <= TAP_IMAGE_ZOOM_MIN}
+            className="w-9 h-9 flex items-center justify-center text-neutral-200 text-lg disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400"
+            aria-label="Dézoomer"
+          >
+            −
+          </button>
+        </div>
+        {zoom > 1 && (
+          <span className="px-1.5 py-0.5 rounded bg-black/70 text-[9px] text-neutral-400 whitespace-nowrap">
+            2 doigts pour te déplacer
+          </span>
+        )}
+      </div>
     </div>
   );
 }
