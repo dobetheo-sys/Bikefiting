@@ -44,7 +44,8 @@ const MODES = {
     checklist: [
       'Allongé sur le dos, téléphone au sol/sur un support, vue de côté (sagittale)',
       'Jambe non testée : garde-la tendue et bien à plat au sol pendant tout le test (sinon la mesure est faussée)',
-      'Recule le téléphone : laisse de la place au-dessus de toi dans le cadre, la jambe monte plus haut que prévu',
+      'Téléphone à environ 1,5-2 m, dans la même pièce que toi (pas filmé depuis une pièce voisine ou par une porte) : assez de recul pour voir la jambe monter, mais tu dois rester grand dans l\u2019image',
+      'Ne filme pas à contre-jour : pas de fenêtre ou de lumière vive juste derrière toi',
       'Cadrage : hanche, jambe testée ET pied entièrement visibles, même en haut de la levée',
       'Jambe testée tendue, genou verrouillé',
       'Lève la jambe le plus haut possible sans plier le genou — arrête-toi si ça tire ou fait mal',

@@ -100,7 +100,21 @@ async function processAslrVideo(blob, onProgress, onModelReady) {
       "On n'a pas réussi à te repérer sur cette vidéo. Vérifie que ta hanche et toute la jambe testée sont bien visibles à l'écran, puis réessaie."
     );
   }
-  return extractAslrAngleTrace(frames);
+  const trace = extractAslrAngleTrace(frames);
+  // engagedAtIndex === null : la levée n'a jamais été détectée comme réellement engagée (cuisse
+  // >= 15° sur plusieurs frames consécutives). Retour terrain (10/08/2026) : une vidéo filmée
+  // trop loin et à contre-jour (caméra dans une autre pièce, à travers une porte, en direction
+  // d'une fenêtre) n'a laissé détecter QU'UNE frame sur 40 — cette frame avait un genou plié,
+  // donc maxThighAngle (initialisé à 0) n'a jamais été mis à jour : l'appli affichait "0°" comme
+  // si c'était une vraie mesure de souplesse nulle, alors que la vidéo montrait une levée à ~90°
+  // parfaitement correcte, juste indétectable par le modèle. Un test jamais engagé n'est PAS un
+  // 0° valide — c'est un échec de mesure, à traiter comme tel.
+  if (trace.engagedAtIndex === null) {
+    throw new Error(
+      "On n'a pas réussi à mesurer la levée de ta jambe sur cette vidéo (pas assez d'images où tu es bien visible). Rapproche la caméra, reste dans la même pièce, évite de filmer à contre-jour, puis réessaie."
+    );
+  }
+  return trace;
 }
 
 async function processProfileVideoTrial(blob, onProgress, onModelReady) {
