@@ -32,6 +32,19 @@ export async function createBikeFitPoseLandmarker(
     baseOptions: { modelAssetPath: MODEL_URL },
     runningMode: 'VIDEO',
     numPoses: 1,
+    // Retour terrain (10/08/2026) : sur une vraie vidéo ASLR filmée correctement (même pièce,
+    // pas de contre-jour, cadrage correct) mais avec le sujet à distance relativement grande
+    // dans le cadre (contrainte d'espace réelle — reculer davantage sort du cadre en mode
+    // portrait), la détection restait quasi nulle avec les seuils de confiance par défaut de
+    // MediaPipe (0.5). Le cas d'usage ici (vue au sol, sujet allongé, souvent assez petit dans
+    // l'image) est en dehors du cas standard "personne debout, cadrée serrée" sur lequel ces
+    // seuils par défaut sont calibrés — on les abaisse pour ce mode d'usage précis. Le risque
+    // (landmarks plus bruités sur certaines frames) est acceptable ici : extractAslrAngle ne
+    // retient que le max de la cuisse tant que le genou reste verrouillé sur plusieurs frames
+    // consécutives (ENGAGE_STREAK_FRAMES), donc un faux positif isolé n'engage pas la mesure.
+    minPoseDetectionConfidence: 0.3,
+    minPosePresenceConfidence: 0.3,
+    minTrackingConfidence: 0.3,
   });
 }
 
