@@ -1153,7 +1153,13 @@ export default function App() {
       setBusy('Analyse de la photo frontale…');
       setBusyProgress(null);
       try {
-        const pfsaCm2 = await processFrontalPhoto(payload.blob, payload.calibration);
+        // Le masque de segmentation MediaPipe n'a pas forcément la même résolution que la
+        // photo où la calibration (2 taps) a été mesurée — cf. le commentaire sur
+        // CalibrationRef dans capture-processing.ts. payload.meta porte la résolution native
+        // de la photo (capturedMeta dans PostureCaptureFlow.jsx), indispensable pour que
+        // computePFSA_cm2 remette le masque à la bonne échelle.
+        const calibration = { ...payload.calibration, photoWidthPx: payload.meta?.width, photoHeightPx: payload.meta?.height };
+        const pfsaCm2 = await processFrontalPhoto(payload.blob, calibration);
         const photoReviewUrl = URL.createObjectURL(payload.blob);
         setPendingTrial((prev) => ({
           ...prev,

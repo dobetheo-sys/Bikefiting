@@ -270,4 +270,30 @@ describe('computePFSA_cm2 — méthode terrain Debraux et al. 2009', () => {
     const mask: BinaryMask = { width: 1, height: 1, data: new Uint8Array([1]) };
     assert.throws(() => computePFSA_cm2(mask, { pixelLength: 0, realLengthCm: 40 }), /pixelLength doit être > 0/);
   });
+
+  // Retour terrain (10/08/2026) : pFSA mesurée à 2.9 cm² au lieu de quelques milliers sur une
+  // vraie photo. Cause : le masque de segmentation MediaPipe (segmentation-integration.ts) a
+  // sa PROPRE résolution de sortie, différente de la photo où la calibration est mesurée —
+  // sans remise à l'échelle, la formule traitait chaque pixel du masque comme s'il avait la
+  // taille physique d'un pixel de la photo, sous-estimant l'aire d'un facteur énorme dès que
+  // le masque est plus petit que la photo (cas réel avec MediaPipe).
+  test('masque à une résolution différente de la photo -> remise à l\'échelle via photoWidthPx/photoHeightPx', () => {
+    // Masque 10x plus petit que la photo dans chaque dimension (aire 100x plus petite) :
+    // 60 px du masque doivent représenter la même aire réelle que 6000 px d'un masque à la
+    // résolution de la photo (test précédent) -> même résultat, 3840 cm².
+    const mask: BinaryMask = { width: 100, height: 100, data: new Uint8Array(10000) };
+    for (let i = 0; i < 60; i++) mask.data[i] = 1;
+    const pfsa = computePFSA_cm2(mask, { pixelLength: 50, realLengthCm: 40, photoWidthPx: 1000, photoHeightPx: 1000 });
+    assert.equal(pfsa, 3840);
+  });
+
+  test('sans photoWidthPx/photoHeightPx -> pas de remise à l\'échelle (comportement historique préservé)', () => {
+    const mask: BinaryMask = { width: 100, height: 100, data: new Uint8Array(10000) };
+    for (let i = 0; i < 60; i++) mask.data[i] = 1;
+    const pfsa = computePFSA_cm2(mask, { pixelLength: 50, realLengthCm: 40 });
+    // 60 px * (40/50)^2 = 38.4 cm² — faux si le masque n'est vraiment pas à l'échelle de la
+    // photo, mais c'est le comportement attendu quand l'appelant ne fournit pas ces champs
+    // (ex. masque déjà à la résolution de la photo par construction).
+    assert.equal(pfsa, 38.4);
+  });
 });

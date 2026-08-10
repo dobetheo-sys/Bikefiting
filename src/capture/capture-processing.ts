@@ -310,15 +310,33 @@ export interface BinaryMask {
 export interface CalibrationRef {
   pixelLength: number; // longueur mesurée en pixels sur la photo (ex: largeur de cintre)
   realLengthCm: number; // longueur réelle connue correspondante
+  // Résolution de la photo dans laquelle pixelLength a été mesuré (les 2 taps de calibration
+  // se font sur la photo affichée à sa résolution native, cf. capturedMeta dans
+  // PostureCaptureFlow.jsx). Optionnels pour ne pas casser un appelant qui donne déjà un
+  // masque à cette même résolution (cf. test "surface calculée..." plus bas), mais
+  // indispensables dès que ce n'est pas le cas — et ce n'est PAS le cas pour la segmentation
+  // MediaPipe réelle : mask.width/height (segmentation-integration.ts) est la résolution de
+  // SORTIE du modèle, qui n'a aucune raison de correspondre à la résolution de la photo.
+  // Retour terrain : pFSA mesurée à 2.9 cm² au lieu de quelques milliers — cohérent avec un
+  // masque nettement plus petit que la photo et aucune remise à l'échelle avant ce fix.
+  photoWidthPx?: number;
+  photoHeightPx?: number;
 }
 
 export function computePFSA_cm2(mask: BinaryMask, calibration: CalibrationRef): number {
   if (calibration.pixelLength <= 0) throw new Error('computePFSA_cm2: calibration.pixelLength doit être > 0');
   const cmPerPixel = calibration.realLengthCm / calibration.pixelLength;
-  const cm2PerPixel = cmPerPixel * cmPerPixel;
+  // cmPerPixel ci-dessus est à l'échelle de la PHOTO où la calibration a été mesurée. Le
+  // masque de segmentation peut être à une résolution différente (cf. CalibrationRef) — on
+  // ramène l'aire d'un pixel du masque à l'aire qu'il représente réellement sur la photo
+  // avant d'appliquer cm²/pixel-photo, sinon la surface est faussée d'un facteur
+  // (résolution photo / résolution masque)² — potentiellement énorme.
+  const scaleX = calibration.photoWidthPx ? calibration.photoWidthPx / mask.width : 1;
+  const scaleY = calibration.photoHeightPx ? calibration.photoHeightPx / mask.height : 1;
+  const cm2PerMaskPixel = cmPerPixel * cmPerPixel * scaleX * scaleY;
   let count = 0;
   for (let i = 0; i < mask.data.length; i++) if (mask.data[i]) count++;
-  return r1(count * cm2PerPixel);
+  return r1(count * cm2PerMaskPixel);
 }
 
 // Sanity checks déplacés dans capture-processing.test.ts (node:test).
