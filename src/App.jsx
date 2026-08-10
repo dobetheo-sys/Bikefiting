@@ -484,8 +484,11 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
         {trials.map((t) => (
           <div key={t.id} className="p-4 text-sm" style={{ fontFamily: 'ui-monospace, monospace' }}>
             <div className="text-neutral-200">{t.id}</div>
+            {/* Le genou est un critère d'exclusion dur au même titre que hanche/tronc (validateTrial,
+                cf. posture-aero-engine.ts) mais restait invisible ici — un essai pouvait être exclu
+                pour un genou hors plage sans que rien dans cette liste ne le laisse deviner. */}
             <div className="text-xs text-neutral-500 mt-1">
-              hanche {t.angles.hip.mean}° · tronc {t.angles.trunk.mean}° · pFSA {t.frontal.pFSA_cm2} cm²
+              hanche {t.angles.hip.mean}° · tronc {t.angles.trunk.mean}° · genou {t.angles.knee.mean}° · pFSA {t.frontal.pFSA_cm2} cm²
             </div>
             {t.deltas && <div className="text-xs text-amber-400/70 mt-1">{formatDeltas(t.deltas)}</div>}
           </div>
