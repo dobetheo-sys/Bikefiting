@@ -84,6 +84,25 @@ const VIDEO_MODES = new Set(['profile_video', 'aslr_test']);
 // natif, quel que soit le type de média.
 const IMPORT_FIRST_MODES = new Set(['profile_video', 'aslr_test', 'frontal_photo']);
 
+// Retour terrain : "il faut définir plus précisément les points d'articulations pour mieux
+// placer les repères" — pointLabels ('hanche', 'genou'...) ne disait pas OÙ exactement taper
+// (pli du short ? centre de l'articulation ? os qui dépasse ?), une ambiguïté qui contribue au
+// bruit de mesure (cf. retour "j'ai dû tricher pour aligner les points"). Repères anatomiques
+// standard utilisés en bike-fitting [SOURCED, convention Retül/BikeFit] : ce sont des repères
+// osseux qui dépassent, palpables et visibles même habillé — pas les plis de peau/vêtement qui
+// bougent avec la position. Un seul dictionnaire par nom de point pour ne pas se désynchroniser
+// entre aslr_test/pmh/pmb qui réutilisent les mêmes noms ('hanche', 'genou', 'cheville').
+const JOINT_POINT_HINTS = {
+  épaule: "Acromion : la pointe osseuse en haut de l'épaule, à l'extrémité de la clavicule — pas le haut du bras.",
+  hanche: 'Grand trochanter : la bosse osseuse sur le côté de la hanche, sous la ceinture — pas le pli du short.',
+  genou: "Épicondyle latéral du fémur : la bosse osseuse sur le côté extérieur du genou, à hauteur de l'articulation.",
+  cheville: 'Malléole latérale : la bosse osseuse sur le côté extérieur de la cheville.',
+};
+
+function withJointHints(pointLabels) {
+  return pointLabels.map((label) => JOINT_POINT_HINTS[label]);
+}
+
 // Configuration des étapes de mesure manuelle par mode — chaque étape correspond à UNE image
 // que l'utilisateur choisit dans sa vidéo (via l'écran 'review', bouton `pickButtonLabel`) puis
 // tape `pointLabels.length` points dessus (écran 'measure', dans cet ordre). `compute` calcule
@@ -96,6 +115,7 @@ const MANUAL_MEASURE_STEPS = {
       frameInstruction: "Utilise les contrôles pour trouver l'image où ta jambe testée est le plus haut, genou tendu.",
       pickButtonLabel: 'Choisir cette image',
       pointLabels: ['hanche', 'genou', 'cheville'],
+      pointHints: withJointHints(['hanche', 'genou', 'cheville']),
       compute: (pts) => computeManualAslrAngle(pts[0], pts[1], pts[2]),
     },
   ],
@@ -105,6 +125,7 @@ const MANUAL_MEASURE_STEPS = {
       frameInstruction: "Trouve l'image où la pédale du côté filmé est tout en haut (point mort haut) : cuisse la plus proche du buste.",
       pickButtonLabel: 'Choisir cette image (point haut)',
       pointLabels: ['épaule', 'hanche', 'genou'],
+      pointHints: withJointHints(['épaule', 'hanche', 'genou']),
       compute: (pts) => computeManualTrialPmh(pts[0], pts[1], pts[2]),
     },
     {
@@ -112,6 +133,7 @@ const MANUAL_MEASURE_STEPS = {
       frameInstruction: "Trouve l'image où la pédale du côté filmé est tout en bas (point mort bas) : jambe la plus tendue.",
       pickButtonLabel: 'Choisir cette image (point bas)',
       pointLabels: ['hanche', 'genou', 'cheville'],
+      pointHints: withJointHints(['hanche', 'genou', 'cheville']),
       compute: (pts) => computeManualTrialPmb(pts[0], pts[1], pts[2]),
     },
   ],
@@ -1007,6 +1029,11 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               {currentMeasureStep.pointLabels[measurePoints.length] ? ` · prochain : ${currentMeasureStep.pointLabels[measurePoints.length]}` : ''}
               {measurePoints.length > 0 ? ' · glisse un point déjà posé pour le corriger' : ''}
             </p>
+            {currentMeasureStep.pointHints?.[measurePoints.length] && (
+              <p className="text-xs text-cyan-300 mt-1.5 leading-relaxed">
+                {currentMeasureStep.pointHints[measurePoints.length]}
+              </p>
+            )}
           </div>
 
           <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
