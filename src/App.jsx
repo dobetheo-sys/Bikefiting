@@ -346,23 +346,26 @@ function WelcomeScreen({ onStart }) {
   );
 }
 
-function NumberField({ label, value, onChange, suffix, required }) {
+function NumberField({ label, value, onChange, suffix, required, hint }) {
   return (
-    <label className="flex items-center justify-between gap-3 text-sm text-neutral-200">
-      <span>
-        {label}
-        {required && <span className="text-amber-400"> *</span>}
-      </span>
-      <span className="flex items-center gap-2">
-        <input
-          type="number"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-24 bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-neutral-100 text-right focus:outline-none focus:ring-2 focus:ring-amber-400"
-        />
-        {suffix && <span className="text-xs text-neutral-500 w-6">{suffix}</span>}
-      </span>
-    </label>
+    <div>
+      <label className="flex items-center justify-between gap-3 text-sm text-neutral-200">
+        <span>
+          {label}
+          {required && <span className="text-amber-400"> *</span>}
+        </span>
+        <span className="flex items-center gap-2">
+          <input
+            type="number"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-24 bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-neutral-100 text-right focus:outline-none focus:ring-2 focus:ring-amber-400"
+          />
+          {suffix && <span className="text-xs text-neutral-500 w-6">{suffix}</span>}
+        </span>
+      </label>
+      {hint && <p className="text-xs text-neutral-500 mt-1 pr-16 leading-relaxed">{hint}</p>}
+    </div>
   );
 }
 
@@ -581,6 +584,83 @@ function TrialOverview({ trialNumber, pendingTrial, onOpenVideo, onOpenPhoto, on
   );
 }
 
+// Schéma statique (pas à l'échelle) pour rendre "hauteur de selle / recul de selle / reach /
+// drop" concrets pour un débutant qui ne maîtrise pas le jargon bikefitting — retour terrain :
+// "il faut expliciter ces termes pour les débutants et même un petit schéma". Couleur ambre =
+// mesures liées à la selle (cohérent avec l'eyebrow ambre de cet écran), cyan = mesures liées
+// au cintre, pour que la légende texte et le schéma se répondent visuellement.
+function BikeDeltasDiagram() {
+  const bb = { x: 155, y: 200 };
+  const saddle = { x: 95, y: 80 };
+  const bar = { x: 260, y: 115 };
+  const headBase = { x: 260, y: 175 };
+  const rearHub = { x: 70, y: 240 };
+  const frontHub = { x: 280, y: 240 };
+
+  return (
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3 mb-6">
+      <svg viewBox="0 0 360 290" className="w-full h-auto" role="img" aria-label="Schéma des mesures de réglage du vélo : hauteur et recul de selle, reach, drop">
+        <defs>
+          <marker id="arrow-amber" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#fbbf24" />
+          </marker>
+          <marker id="arrow-cyan" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#22d3ee" />
+          </marker>
+        </defs>
+
+        {/* Silhouette du vélo, simplifiée, pas à l'échelle */}
+        <g stroke="#525252" strokeWidth="3" fill="none" strokeLinecap="round">
+          <line x1={bb.x} y1={bb.y} x2={rearHub.x} y2={rearHub.y} />
+          <line x1={saddle.x} y1={saddle.y} x2={rearHub.x} y2={rearHub.y} />
+          <line x1={bb.x} y1={bb.y} x2={saddle.x} y2={saddle.y} />
+          <line x1={bb.x} y1={bb.y} x2={headBase.x} y2={headBase.y} />
+          <line x1={headBase.x} y1={headBase.y} x2={frontHub.x} y2={frontHub.y} />
+          <line x1={headBase.x} y1={headBase.y} x2={bar.x} y2={bar.y} />
+          <line x1={saddle.x} y1={saddle.y} x2={bar.x} y2={bar.y} />
+        </g>
+        <circle cx={rearHub.x} cy={rearHub.y} r="30" fill="none" stroke="#404040" strokeWidth="3" />
+        <circle cx={frontHub.x} cy={frontHub.y} r="30" fill="none" stroke="#404040" strokeWidth="3" />
+        <circle cx={bb.x} cy={bb.y} r="4" fill="#a3a3a3" />
+        <ellipse cx={saddle.x} cy={saddle.y} rx="16" ry="5" fill="#737373" />
+        <circle cx={bar.x} cy={bar.y} r="5" fill="#737373" />
+
+        {/* Hauteur de selle (ambre, verticale, à gauche) */}
+        <g stroke="#fbbf24" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+          <line x1={bb.x} y1={bb.y} x2="30" y2={bb.y} />
+          <line x1={saddle.x} y1={saddle.y} x2="30" y2={saddle.y} />
+        </g>
+        <line x1="30" y1={bb.y} x2="30" y2={saddle.y} stroke="#fbbf24" strokeWidth="2" markerStart="url(#arrow-amber)" markerEnd="url(#arrow-amber)" />
+        <text x="14" y={(bb.y + saddle.y) / 2} fill="#fbbf24" fontSize="11" textAnchor="middle" transform={`rotate(-90 14 ${(bb.y + saddle.y) / 2})`}>hauteur selle</text>
+
+        {/* Recul de selle (ambre, horizontale, en bas) */}
+        <g stroke="#fbbf24" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+          <line x1={saddle.x} y1={saddle.y} x2={saddle.x} y2="272" />
+          <line x1={bb.x} y1={bb.y} x2={bb.x} y2="272" />
+        </g>
+        <line x1={saddle.x} y1="272" x2={bb.x} y2="272" stroke="#fbbf24" strokeWidth="2" markerStart="url(#arrow-amber)" markerEnd="url(#arrow-amber)" />
+        <text x={(saddle.x + bb.x) / 2} y="285" fill="#fbbf24" fontSize="11" textAnchor="middle">recul selle</text>
+
+        {/* Reach (cyan, horizontale, en haut) */}
+        <g stroke="#22d3ee" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+          <line x1={saddle.x} y1={saddle.y} x2={saddle.x} y2="16" />
+          <line x1={bar.x} y1={bar.y} x2={bar.x} y2="16" />
+        </g>
+        <line x1={saddle.x} y1="16" x2={bar.x} y2="16" stroke="#22d3ee" strokeWidth="2" markerStart="url(#arrow-cyan)" markerEnd="url(#arrow-cyan)" />
+        <text x={(saddle.x + bar.x) / 2} y="12" fill="#22d3ee" fontSize="11" textAnchor="middle">reach</text>
+
+        {/* Drop (cyan, verticale, à droite) */}
+        <g stroke="#22d3ee" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+          <line x1={saddle.x} y1={saddle.y} x2="335" y2={saddle.y} />
+          <line x1={bar.x} y1={bar.y} x2="335" y2={bar.y} />
+        </g>
+        <line x1="335" y1={saddle.y} x2="335" y2={bar.y} stroke="#22d3ee" strokeWidth="2" markerStart="url(#arrow-cyan)" markerEnd="url(#arrow-cyan)" />
+        <text x="351" y={(saddle.y + bar.y) / 2} fill="#22d3ee" fontSize="11" textAnchor="middle" transform={`rotate(-90 351 ${(saddle.y + bar.y) / 2})`}>drop</text>
+      </svg>
+    </div>
+  );
+}
+
 function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
   const [saddleHeightMm, setSaddleHeightMm] = useState(String(initialDeltas?.saddleHeightMm ?? 0));
   const [saddleSetbackMm, setSaddleSetbackMm] = useState(String(initialDeltas?.saddleSetbackMm ?? 0));
@@ -617,11 +697,37 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
         </>
       }
     >
-      <div className="space-y-4 mb-8">
-        <NumberField label="Hauteur de selle" value={saddleHeightMm} onChange={setSaddleHeightMm} suffix="mm" />
-        <NumberField label="Recul de selle" value={saddleSetbackMm} onChange={setSaddleSetbackMm} suffix="mm" />
-        <NumberField label="Reach" value={reachMm} onChange={setReachMm} suffix="mm" />
-        <NumberField label="Drop" value={dropMm} onChange={setDropMm} suffix="mm" />
+      <BikeDeltasDiagram />
+
+      <div className="space-y-5 mb-8">
+        <NumberField
+          label="Hauteur de selle"
+          value={saddleHeightMm}
+          onChange={setSaddleHeightMm}
+          suffix="mm"
+          hint="Distance entre l'axe du pédalier et le haut de la selle, le long du tube de selle. + = tu montes la selle."
+        />
+        <NumberField
+          label="Recul de selle"
+          value={saddleSetbackMm}
+          onChange={setSaddleSetbackMm}
+          suffix="mm"
+          hint="Position de la selle par rapport à l'axe du pédalier. + = tu recules la selle, − = tu l'avances."
+        />
+        <NumberField
+          label="Reach"
+          value={reachMm}
+          onChange={setReachMm}
+          suffix="mm"
+          hint="Distance horizontale entre la selle et le cintre. + = position plus étirée (cintre avancé ou selle reculée)."
+        />
+        <NumberField
+          label="Drop"
+          value={dropMm}
+          onChange={setDropMm}
+          suffix="mm"
+          hint="Différence de hauteur entre la selle et le cintre. + = cintre plus bas, position plus aéro/engagée."
+        />
       </div>
       <p className="text-xs text-neutral-500 -mt-4 mb-6">
         Idéalement, change un seul réglage à la fois entre deux essais — c'est le seul moyen de savoir lequel a fait la différence.
