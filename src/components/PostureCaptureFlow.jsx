@@ -308,6 +308,10 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const [measureStillSize, setMeasureStillSize] = useState(null);
   const [measurePoints, setMeasurePoints] = useState([]);
   const [measureResults, setMeasureResults] = useState([]); // résultats des étapes déjà validées
+  // Détail des étapes déjà validées (image + points tapés + résultat), transmis à onCaptured
+  // pour que l'appelant (App.jsx) puisse proposer un écran de relecture après coup — retour
+  // terrain : "j'ai pas pu revérifier les mesures que j'avais faites une fois validé".
+  const [measureReviews, setMeasureReviews] = useState([]);
   // Défilement fin de la vidéo sur l'écran 'review' (screen 'review') : les contrôles natifs
   // du <video> ne permettent de seeker qu'assez grossièrement au toucher — retour terrain
   // ("la vidéo puisse défiler plus précisément, pas seconde par seconde") — trouver l'exacte
@@ -542,6 +546,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
     setTaps([]);
     setMeasureStepIndex(0);
     setMeasureResults([]);
+    setMeasureReviews([]);
     setMeasureStillUrl(null);
     setMeasureStillSize(null);
     setMeasurePoints([]);
@@ -612,10 +617,22 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const finishMeasureStep = () => {
     if (!measureResult) return;
     const allResults = [...measureResults, measureResult];
+    const allReviews = [
+      ...measureReviews,
+      {
+        key: currentMeasureStep.key,
+        stillUrl: measureStillUrl,
+        stillSize: measureStillSize,
+        points: measurePoints,
+        pointLabels: currentMeasureStep.pointLabels,
+        result: measureResult,
+      },
+    ];
     if (measureStepIndex + 1 < manualSteps.length) {
       // Étape suivante (ex. ASLR: aucune ; vidéo profil : PMH -> PMB) : retour à l'écran de
       // review pour choisir la prochaine image, sur la même vidéo déjà capturée.
       setMeasureResults(allResults);
+      setMeasureReviews(allReviews);
       setMeasureStepIndex((i) => i + 1);
       setMeasurePoints([]);
       setMeasureStillUrl(null);
@@ -624,7 +641,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
       return;
     }
     stopStream();
-    onCaptured?.({ mode, ...MANUAL_MEASURE_FINALIZE[mode](allResults) });
+    onCaptured?.({ mode, ...MANUAL_MEASURE_FINALIZE[mode](allResults), review: allReviews });
   };
 
   const startOver = () => {
@@ -633,6 +650,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
     setTaps([]);
     setMeasureStepIndex(0);
     setMeasureResults([]);
+    setMeasureReviews([]);
     setMeasureStillUrl(null);
     setMeasureStillSize(null);
     setMeasurePoints([]);

@@ -440,6 +440,7 @@ function SessionScreen({ profile, trials, onNewTrial, onAnalyze, onNewSession })
             <div className="text-xs text-neutral-500 mt-1">
               hanche {t.angles.hip.mean}° · tronc {t.angles.trunk.mean}° · pFSA {t.frontal.pFSA_cm2} cm²
             </div>
+            {t.deltas && <div className="text-xs text-amber-400/70 mt-1">{formatDeltas(t.deltas)}</div>}
           </div>
         ))}
       </div>
@@ -545,6 +546,74 @@ function TrialOverview({ trialNumber, pendingTrial, onOpenVideo, onOpenPhoto, on
           summary={deltasDone ? formatDeltas(pendingTrial.deltas) : ''}
           onClick={onOpenDeltas}
         />
+      </div>
+    </ScreenShell>
+  );
+}
+
+function ReviewMarker({ point, size, label }) {
+  if (!size) return null;
+  return (
+    <div
+      className="absolute flex flex-col items-center pointer-events-none"
+      style={{ left: `${(point.x / size.width) * 100}%`, top: `${(point.y / size.height) * 100}%`, transform: 'translate(-50%,-50%)' }}
+    >
+      <div className="w-3 h-3 rounded-full bg-cyan-400 border-2 border-neutral-950" />
+      {label && <span className="mt-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-cyan-200 whitespace-nowrap">{label}</span>}
+    </div>
+  );
+}
+
+// Relecture d'une étape déjà validée (image + points tapés + résultat), sans avoir à tout
+// refaire — retour terrain : "j'ai pas pu revérifier les mesures que j'avais faites une fois
+// validé". Ne couvre que l'essai en cours (pendingTrial n'est pas persisté, cf. commentaire
+// sur SESSION_STORAGE_KEY) — une fois l'essai enregistré, seul le résumé chiffré reste
+// disponible dans la liste des essais (voir formatDeltas/SessionScreen).
+function TrialReviewScreen({ step, pendingTrial, onClose, onRedo }) {
+  const videoReview = pendingTrial?.videoReview ?? [];
+
+  return (
+    <ScreenShell
+      eyebrow={step === 'video' ? 'Vidéo profil' : 'Photo frontale'}
+      title="Relecture de la mesure"
+      footer={
+        <>
+          <button onClick={onClose} className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200">
+            Fermer
+          </button>
+          <button onClick={onRedo} className="w-full flex items-center justify-center gap-2 py-2 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
+            <RotateCcw className="w-3.5 h-3.5" /> Refaire cette étape
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4 mt-4 mb-6">
+        {step === 'video' &&
+          videoReview.map((r, i) => (
+            <div key={i} className="rounded-lg border border-neutral-800 bg-neutral-900 overflow-hidden">
+              <div className="relative bg-black">
+                <img src={r.stillUrl} alt={`Image mesurée — ${r.key}`} className="w-full h-auto block" />
+                {r.points.map((p, j) => (
+                  <ReviewMarker key={j} point={p} size={r.stillSize} label={r.pointLabels[j]} />
+                ))}
+              </div>
+              <div className="p-3 text-sm text-neutral-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                {r.key === 'pmh' && `Hanche ${r.result.hipAngle}° · Tronc ${r.result.trunkAngle}°`}
+                {r.key === 'pmb' && `Genou ${r.result.kneeAngle}°`}
+                {r.key === 'raise' && `Angle ${r.result.angle}° · Genou ${r.result.kneeAngle}°`}
+              </div>
+            </div>
+          ))}
+        {step === 'photo' && pendingTrial?.photoReviewUrl && (
+          <div className="rounded-lg border border-neutral-800 bg-neutral-900 overflow-hidden">
+            <div className="bg-black">
+              <img src={pendingTrial.photoReviewUrl} alt="Photo frontale mesurée" className="w-full h-auto block" />
+            </div>
+            <div className="p-3 text-sm text-neutral-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+              pFSA {pendingTrial.frontal?.pFSA_cm2} cm²
+            </div>
+          </div>
+        )}
       </div>
     </ScreenShell>
   );
@@ -912,15 +981,42 @@ export default function App() {
     setStage('trial-overview');
   }, []);
 
-  const openTrialVideo = useCallback(() => {
+  // Retour terrain : "j'ai pas pu revérifier les mesures que j'avais faites une fois validé" —
+  // cliquer une étape déjà complétée forçait à tout refaire (ré-enregistrer/ré-importer, re-
+  // choisir les images, re-taper les points) juste pour la regarder. Maintenant, cliquer une
+  // étape déjà faite ouvre une relecture (image + points + résultat) au lieu de la relancer ;
+  // "Refaire cette étape" sur cet écran déclenche le vrai redémarrage (redoTrialVideo/Photo).
+  const [reviewStep, setReviewStep] = useState(null); // 'video' | 'photo'
+
+  const redoTrialVideo = useCallback(() => {
     setCaptureKey((k) => k + 1);
     setStage('trial-video');
   }, []);
 
-  const openTrialPhoto = useCallback(() => {
+  const redoTrialPhoto = useCallback(() => {
     setCaptureKey((k) => k + 1);
     setStage('trial-photo');
   }, []);
+
+  const openTrialVideo = useCallback(() => {
+    if (pendingTrial?.angles) {
+      setReviewStep('video');
+      setStage('trial-review');
+      return;
+    }
+    redoTrialVideo();
+  }, [pendingTrial, redoTrialVideo]);
+
+  const openTrialPhoto = useCallback(() => {
+    if (pendingTrial?.frontal) {
+      setReviewStep('photo');
+      setStage('trial-review');
+      return;
+    }
+    redoTrialPhoto();
+  }, [pendingTrial, redoTrialPhoto]);
+
+  const closeReview = useCallback(() => setStage('trial-overview'), []);
 
   const openTrialDeltas = useCallback(() => setStage('trial-deltas'), []);
 
@@ -939,7 +1035,7 @@ export default function App() {
   // Mesure manuelle (points mort haut/bas, cf. PostureCaptureFlow.jsx) — angles déjà calculés,
   // pas de pipeline MediaPipe à attendre ici, donc pas d'écran d'attente pour cette étape.
   const handleTrialVideoCaptured = useCallback((payload) => {
-    setPendingTrial((prev) => ({ ...prev, angles: payload.angles }));
+    setPendingTrial((prev) => ({ ...prev, angles: payload.angles, videoReview: payload.review }));
     setStage('trial-overview');
   }, []);
 
@@ -950,9 +1046,11 @@ export default function App() {
       setBusyProgress(null);
       try {
         const pfsaCm2 = await processFrontalPhoto(payload.blob, payload.calibration);
+        const photoReviewUrl = URL.createObjectURL(payload.blob);
         setPendingTrial((prev) => ({
           ...prev,
           frontal: { pFSA_cm2: pfsaCm2, athleteHeight_cm: athleteHeightCm, headOffset_cm: 0 },
+          photoReviewUrl,
         }));
         setBusy(null);
         setStage('trial-overview');
@@ -1010,6 +1108,15 @@ export default function App() {
           onOpenDeltas={openTrialDeltas}
           onSave={saveTrial}
           onCancel={cancelTrial}
+        />
+      );
+    case 'trial-review':
+      return (
+        <TrialReviewScreen
+          step={reviewStep}
+          pendingTrial={pendingTrial}
+          onClose={closeReview}
+          onRedo={reviewStep === 'video' ? redoTrialVideo : redoTrialPhoto}
         />
       );
     case 'trial-video':
