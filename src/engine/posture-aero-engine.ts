@@ -45,6 +45,13 @@ export interface Trial {
   // hanche/genou à un trunk angle donné (retour d'audit bikefitting). hasAeroBars : purement
   // informatif (affiché, pas utilisé par le moteur) — le vélo a-t-il des prolongateurs pour cet
   // essai, ça change beaucoup l'aérodynamisme et la position des mains.
+  // Nommé "deltas" mais contient en réalité les mesures ABSOLUES du vélo pour cet essai (pas une
+  // différence par rapport à un essai de référence) — retour terrain "ça marche pas" : le
+  // formulaire demandait des différences, les utilisateurs entraient naturellement leurs mesures
+  // réelles (ex. 745mm de hauteur de selle), ce qui n'a de sens que comme valeur absolue. Le nom
+  // du champ est conservé pour ne pas casser les Trial déjà persistés en localStorage. Ce champ
+  // n'est jamais lu par validateTrial/computeComfortScore/computeAeroScore (purement descriptif,
+  // affiché tel quel via toOutputProfile) donc ce changement de sémantique n'affecte pas le scoring.
   deltas: { saddleHeightMm: number; saddleSetbackMm?: number; reachMm: number; dropMm: number; hasAeroBars?: boolean };
 }
 
