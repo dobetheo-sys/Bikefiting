@@ -497,14 +497,17 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
   );
 }
 
-function formatDelta(value) {
-  return `${value >= 0 ? '+' : ''}${value}mm`;
+// `deltas` reste le nom du champ (données déjà persistées côté utilisateurs en localStorage,
+// cf. commentaire sur Trial['deltas'] dans posture-aero-engine.ts) mais représente les mesures
+// RÉELLES et ABSOLUES du vélo pour cet essai, pas une différence — donc pas de signe +/-.
+function formatSetupValue(value) {
+  return `${value}mm`;
 }
 
 function formatDeltas(deltas) {
-  const parts = [`selle ${formatDelta(deltas.saddleHeightMm)}`];
-  if (deltas.saddleSetbackMm !== undefined) parts.push(`recul ${formatDelta(deltas.saddleSetbackMm)}`);
-  parts.push(`reach ${formatDelta(deltas.reachMm)}`, `drop ${formatDelta(deltas.dropMm)}`);
+  const parts = [`selle ${formatSetupValue(deltas.saddleHeightMm)}`];
+  if (deltas.saddleSetbackMm !== undefined) parts.push(`recul ${formatSetupValue(deltas.saddleSetbackMm)}`);
+  parts.push(`reach ${formatSetupValue(deltas.reachMm)}`, `drop ${formatSetupValue(deltas.dropMm)}`);
   if (deltas.hasAeroBars !== undefined) parts.push(deltas.hasAeroBars ? 'prolongateurs' : 'sans prolongateurs');
   return parts.join(' · ');
 }
@@ -586,7 +589,7 @@ function TrialOverview({ trialNumber, pendingTrial, onOpenVideo, onOpenPhoto, on
         <TrialStepRow
           icon={Ruler}
           title="Réglages du vélo"
-          consigne="Hauteur/recul de selle, reach, drop"
+          consigne="Mesures actuelles : hauteur/recul de selle, reach, drop"
           done={deltasDone}
           summary={deltasDone ? formatDeltas(pendingTrial.deltas) : ''}
           onClick={onOpenDeltas}
@@ -745,16 +748,21 @@ function BikeDeltasDiagram() {
 // — connaître les 4 champs (cf. BikeDeltasDiagram) ne dit pas quoi changer ni de combien pour
 // que la comparaison ait un sens. Incréments choisis pour se sentir sur le vélo sans dérégler
 // toute la position d'un coup (cohérents avec les plages KNEE_MIN/MAX, TRUNK_MIN/MAX du moteur
-// — un delta plus gros a de bonnes chances de sortir de la plage validée et d'exclure l'essai).
+// — un changement plus gros a de bonnes chances de sortir de la plage validée et d'exclure l'essai).
+// NB : ce formulaire demande les mesures RÉELLES du vélo (pas une différence à calculer soi-même,
+// cf. retour terrain "ça marche pas" — les utilisateurs entraient naturellement leurs mesures
+// absolues, ce que confirme aussi BikeDeltasDiagram qui a toujours représenté des distances
+// absolues). L'app compare les essais entre eux automatiquement.
 function TrialDeltasGuidance() {
   return (
     <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-6">
       <h2 className="text-xs tracking-widest text-cyan-300 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-        Quoi changer entre 2 essais ?
+        Entre 2 essais, quoi changer ?
       </h2>
       <ul className="text-xs text-cyan-100/80 space-y-1.5 leading-relaxed">
-        <li>• Change un seul réglage à la fois — sinon impossible de savoir lequel a fait la différence.</li>
-        <li>• Incréments qui se sentent sans dérégler toute la position : selle ±5 mm, reach ±10 mm, drop ±10-15 mm.</li>
+        <li>• Mesure et note tes valeurs actuelles, telles quelles sur le vélo — pas besoin de calculer une différence, l'app s'en charge.</li>
+        <li>• D'un essai à l'autre, change un seul réglage à la fois — sinon impossible de savoir lequel a fait la différence.</li>
+        <li>• Changements qui se sentent sans dérégler toute la position : selle ±5 mm, reach ±10 mm, drop ±10-15 mm.</li>
         <li>• Cherches plus de confort ? Commence par la selle (hauteur/recul) — c'est ce qui joue le plus sur le genou et la hanche.</li>
         <li>• Cherches plus d'aéro ? Commence par le cintre (reach/drop) — c'est ce qui réduit le plus ta surface frontale.</li>
         <li>• Laisse quelques tours de pédale pour t'habituer à la nouvelle position avant de filmer.</li>
@@ -764,18 +772,18 @@ function TrialDeltasGuidance() {
 }
 
 function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
-  const [saddleHeightMm, setSaddleHeightMm] = useState(String(initialDeltas?.saddleHeightMm ?? 0));
-  const [saddleSetbackMm, setSaddleSetbackMm] = useState(String(initialDeltas?.saddleSetbackMm ?? 0));
-  const [reachMm, setReachMm] = useState(String(initialDeltas?.reachMm ?? 0));
-  const [dropMm, setDropMm] = useState(String(initialDeltas?.dropMm ?? 0));
+  const [saddleHeightMm, setSaddleHeightMm] = useState(initialDeltas?.saddleHeightMm !== undefined ? String(initialDeltas.saddleHeightMm) : '');
+  const [saddleSetbackMm, setSaddleSetbackMm] = useState(initialDeltas?.saddleSetbackMm !== undefined ? String(initialDeltas.saddleSetbackMm) : '');
+  const [reachMm, setReachMm] = useState(initialDeltas?.reachMm !== undefined ? String(initialDeltas.reachMm) : '');
+  const [dropMm, setDropMm] = useState(initialDeltas?.dropMm !== undefined ? String(initialDeltas.dropMm) : '');
   const [hasAeroBars, setHasAeroBars] = useState(initialDeltas?.hasAeroBars ?? false);
 
   return (
     <ScreenShell
       eyebrow="Réglages du vélo"
-      title="Qu’as-tu changé sur le vélo ?"
+      title="Quelles sont les mesures actuelles du vélo ?"
       subtitle={
-        <p className="text-neutral-400 text-sm mb-6">Par rapport à ton réglage de référence (0 si c’est le premier essai).</p>
+        <p className="text-neutral-400 text-sm mb-6">Mesure directement sur le vélo pour cet essai — pas besoin de calculer une différence, l'app compare pour toi.</p>
       }
       footer={
         <>
@@ -811,28 +819,28 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
           value={saddleHeightMm}
           onChange={setSaddleHeightMm}
           suffix="mm"
-          hint="Distance entre l'axe du pédalier et le haut de la selle, le long du tube de selle. + = tu montes la selle."
+          hint="Distance entre l'axe du pédalier et le haut de la selle, le long du tube de selle (valeur mesurée, pas une différence)."
         />
         <NumberField
           label="Recul de selle"
           value={saddleSetbackMm}
           onChange={setSaddleSetbackMm}
           suffix="mm"
-          hint="Position de la selle par rapport à l'axe du pédalier. + = tu recules la selle, − = tu l'avances."
+          hint="Distance horizontale entre l'axe du pédalier et le nez de la selle."
         />
         <NumberField
           label="Reach"
           value={reachMm}
           onChange={setReachMm}
           suffix="mm"
-          hint="Distance horizontale entre la selle et le cintre. + = position plus étirée (cintre avancé ou selle reculée)."
+          hint="Distance horizontale entre le nez de la selle et le cintre."
         />
         <NumberField
           label="Drop"
           value={dropMm}
           onChange={setDropMm}
           suffix="mm"
-          hint="Différence de hauteur entre la selle et le cintre. + = cintre plus bas, position plus aéro/engagée."
+          hint="Différence de hauteur entre le haut de la selle et le cintre (cintre plus bas = drop plus grand)."
         />
 
         <div>
