@@ -1,16 +1,26 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp, Crosshair, Upload, Lock } from 'lucide-react';
+import { computeManualAslrAngle, KNEE_STRAIGHT_THRESHOLD } from '../capture/capture-processing';
 
 // posture-capture-flow.jsx
-// Flux de capture réel (caméra du téléphone) pour les deux entrées du pipeline §2 du spec :
-//   A. vidéo profil (angles articulaires)
+// Flux de capture réel (caméra du téléphone) pour les entrées du pipeline §2 du spec :
+//   A. vidéo profil (angles articulaires) — détection MediaPipe automatique, traitée dans
+//      App.jsx après capture
 //   B. photo frontale + étalonnage par 2 taps (pFSA)
+//   C. test de souplesse ASLR — mesure MANUELLE par 3 taps (hanche/genou/cheville) sur une
+//      image choisie par l'utilisateur dans sa propre vidéo. Retour terrain (10/08/2026) :
+//      la détection auto MediaPipe a échoué de façon répétée sur ce cas précis (sujet allongé
+//      au sol, filmé de loin/au ras du sol — hors du cas standard "personne debout, cadrée
+//      serré") malgré plusieurs corrections. Plutôt que de continuer à durcir un pipeline
+//      auto peu fiable, l'utilisateur mesure lui-même — plus simple et plus robuste pour ce
+//      cas, cf. capture-processing.ts (computeManualAslrAngle) pour la géométrie.
 //
-// Ce composant s'arrête à la capture + étalonnage : il appelle `onCaptured({ mode, blob,
-// meta, calibration })` puis rend la main à l'appelant. L'inférence (pose estimation,
-// segmentation) vit dans App.jsx, qui orchestre capture-processing.ts et
-// segmentation-integration.ts/pose-integration.ts — pas dans ce composant, pour garder
-// la capture UI indépendante du pipeline ML.
+// Pour A et B, ce composant s'arrête à la capture + étalonnage : il appelle
+// `onCaptured({ mode, blob, meta, calibration })` puis rend la main à l'appelant, qui pilote
+// l'inférence (App.jsx, via capture-processing.ts et segmentation-integration.ts/
+// pose-integration.ts). Pour C (aslr_test), ce composant va jusqu'au bout de la mesure
+// lui-même et appelle `onCaptured({ mode: 'aslr_test', angle, kneeAngle })` — pas de blob,
+// pas de pipeline ML à exécuter côté appelant pour ce mode.
 //
 // Point d'incertitude non résolu (cf. HANDOFF_CLAUDE_CODE.md, tâche 2) : le niveau/tilt
 // (DeviceOrientationEvent) peut nécessiter DeviceOrientationEvent.requestPermission() sur
@@ -61,6 +71,9 @@ const VIDEO_MODES = new Set(['profile_video', 'aslr_test']);
 // d'audit ergonomique. La checklist reste utile à lire avant de dégainer l'appareil photo
 // natif, quel que soit le type de média.
 const IMPORT_FIRST_MODES = new Set(['profile_video', 'aslr_test', 'frontal_photo']);
+
+// Ordre des 3 taps de la mesure manuelle ASLR (screen 'measure') — voir computeManualAslrAngle.
+const ASLR_POINT_LABELS = ['hanche', 'genou', 'cheville'];
 
 // Mémorise la longueur du repère d'étalonnage (ex. largeur de cintre) d'une capture à
 // l'autre — c'est en général toujours le même repère, pas la peine de le retaper.
@@ -113,7 +126,7 @@ function ChecklistPanel({ mode, open, onToggle }) {
 }
 
 export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }) {
-  const [screen, setScreen] = useState('intro'); // intro | camera | review | calibrate
+  const [screen, setScreen] = useState('intro'); // intro | camera | review | calibrate | measure
   const [mode, setMode] = useState(initialMode ?? null);
   const [error, setError] = useState(null);
   const [recording, setRecording] = useState(false);
@@ -126,8 +139,15 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const [tilt, setTilt] = useState(null);
   const [tiltOffset, setTiltOffset] = useState(0);
   const [captureUi, setCaptureUi] = useState('import'); // 'import' | 'live'
+  // Mesure manuelle ASLR (screen 'measure') : image fixe choisie dans la vidéo + 3 points
+  // tapés dessus (hanche, genou, cheville) — indépendant de `taps`/`capturedUrl` qui servent
+  // à l'étalonnage de la photo frontale.
+  const [aslrStillUrl, setAslrStillUrl] = useState(null);
+  const [aslrStillSize, setAslrStillSize] = useState(null);
+  const [aslrPoints, setAslrPoints] = useState([]);
 
   const videoRef = useRef(null);
+  const reviewVideoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -344,6 +364,9 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
     setCapturedUrl(null);
     setCapturedMeta(null);
     setTaps([]);
+    setAslrStillUrl(null);
+    setAslrStillSize(null);
+    setAslrPoints([]);
     setScreen('camera');
   };
 
@@ -368,10 +391,53 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
     });
   };
 
+  // Test de souplesse ASLR uniquement : au lieu de "Valider" la vidéo entière (finish), on fige
+  // l'image affichée à l'instant où l'utilisateur a mis pause/navigué avec les contrôles natifs
+  // du <video> — c'est à lui de trouver le bon moment (jambe la plus haute, genou tendu), pas à
+  // un modèle de détecter automatiquement.
+  const captureStillFromReview = () => {
+    const video = reviewVideoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !video.videoWidth) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      setAslrStillUrl(URL.createObjectURL(blob));
+      setAslrStillSize({ width: canvas.width, height: canvas.height });
+      setAslrPoints([]);
+      setScreen('measure');
+    }, 'image/jpeg', 0.92);
+  };
+
+  const handleMeasureTap = (e) => {
+    if (aslrPoints.length >= 3 || !aslrStillSize) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * aslrStillSize.width;
+    const y = ((e.clientY - rect.top) / rect.height) * aslrStillSize.height;
+    setAslrPoints((prev) => [...prev, { x, y }]);
+  };
+
+  const aslrMeasurement = aslrPoints.length === 3 ? computeManualAslrAngle(aslrPoints[0], aslrPoints[1], aslrPoints[2]) : null;
+
+  const backToReview = () => {
+    setAslrPoints([]);
+    setScreen('review');
+  };
+
+  const finishManualAslr = () => {
+    if (!aslrMeasurement) return;
+    stopStream();
+    onCaptured?.({ mode, angle: aslrMeasurement.angle, kneeAngle: aslrMeasurement.kneeAngle });
+  };
+
   const startOver = () => {
     setCapturedUrl(null);
     setCapturedMeta(null);
     setTaps([]);
+    setAslrStillUrl(null);
+    setAslrStillSize(null);
+    setAslrPoints([]);
     setMode(null);
     setError(null);
     setScreen('intro');
@@ -579,8 +645,15 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
 
       {screen === 'review' && (
         <div className="flex-1 flex flex-col">
+          {mode === 'aslr_test' && (
+            <div className="px-6 py-3 bg-neutral-900 border-b border-neutral-800">
+              <p className="text-sm text-neutral-200">
+                Utilise les contrôles pour trouver l'image où ta jambe testée est le plus haut, genou tendu.
+              </p>
+            </div>
+          )}
           <div className="flex-1 bg-black flex items-center justify-center">
-            <video src={capturedUrl} controls playsInline className="max-w-full max-h-full" />
+            <video ref={reviewVideoRef} src={capturedUrl} controls playsInline className="max-w-full max-h-full" />
           </div>
           <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-4 space-y-3">
             <div className="text-xs text-neutral-400" style={{ fontFamily: 'ui-monospace, monospace' }}>
@@ -590,10 +663,91 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               <button onClick={retake} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
                 <RotateCcw className="w-4 h-4" /> Reprendre
               </button>
-              <button onClick={finish} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200">
-                <Check className="w-4 h-4" /> Valider
+              {mode === 'aslr_test' ? (
+                <button onClick={captureStillFromReview} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200">
+                  <Check className="w-4 h-4" /> Choisir cette image
+                </button>
+              ) : (
+                <button onClick={finish} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200">
+                  <Check className="w-4 h-4" /> Valider
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {screen === 'measure' && (
+        <div className="flex-1 flex flex-col">
+          <div className="px-6 py-3 bg-neutral-900 border-b border-neutral-800">
+            <p className="text-sm text-neutral-200">
+              Touche 3 points dans l'ordre : hanche → genou → cheville (jambe testée).
+            </p>
+            <p className="text-xs text-neutral-500 mt-1">
+              {aslrPoints.length}/3 points placés
+              {ASLR_POINT_LABELS[aslrPoints.length] ? ` · prochain : ${ASLR_POINT_LABELS[aslrPoints.length]}` : ''}
+            </p>
+          </div>
+
+          <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+            <img
+              src={aslrStillUrl}
+              alt="Image choisie pour la mesure de souplesse"
+              onClick={handleMeasureTap}
+              className="max-w-full max-h-full cursor-crosshair"
+            />
+            {aslrStillSize && aslrPoints.map((p, i) => (
+              <div
+                key={i}
+                className="absolute flex flex-col items-center pointer-events-none"
+                style={{
+                  left: `${(p.x / aslrStillSize.width) * 100}%`,
+                  top: `${(p.y / aslrStillSize.height) * 100}%`,
+                  transform: 'translate(-50%,-50%)',
+                }}
+              >
+                <div className="w-3 h-3 rounded-full bg-cyan-400 border-2 border-neutral-950" />
+                <span className="mt-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-cyan-200 whitespace-nowrap">
+                  {ASLR_POINT_LABELS[i]}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-4 space-y-3">
+            {aslrMeasurement && (
+              <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+                <div className="text-2xl font-semibold text-cyan-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                  {aslrMeasurement.angle}°
+                </div>
+                <p className="text-xs text-neutral-500 mt-1">
+                  {aslrMeasurement.kneeAngle < KNEE_STRAIGHT_THRESHOLD
+                    ? `Genou mesuré à ${aslrMeasurement.kneeAngle}° — il a l'air plié sur cette image. Essaie une image où la jambe testée est bien tendue.`
+                    : `Genou mesuré à ${aslrMeasurement.kneeAngle}° (bien tendu).`}
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={() => setAslrPoints([])} disabled={aslrPoints.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400">
+                <RotateCcw className="w-4 h-4" /> Recommencer
+              </button>
+              <button onClick={backToReview} className="flex-1 py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                Changer d'image
               </button>
             </div>
+            <button
+              onClick={finishManualAslr}
+              disabled={!aslrMeasurement}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
+            >
+              <Check className="w-4 h-4" /> Valider la mesure
+            </button>
+            {onCancel && (
+              <button onClick={onCancel} className="w-full text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
+                Annuler
+              </button>
+            )}
           </div>
         </div>
       )}
