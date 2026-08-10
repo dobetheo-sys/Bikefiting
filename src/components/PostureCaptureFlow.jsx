@@ -278,6 +278,34 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
   const [dragIndex, setDragIndex] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [viewportSize, setViewportSize] = useState(null);
+
+  // Retour terrain : "bug d'affichage quand l'image est choisie" — l'image s'affichait à sa
+  // résolution native (non réduite) au lieu de tenir dans l'écran. Cause : le calque
+  // intermédiaire qui doit partager exactement la même boîte entre l'image et les marqueurs de
+  // points a une hauteur CSS "auto" qui dépend elle-même de son contenu (l'image) ; lui donner
+  // aussi max-height:100% crée une dépendance circulaire (la hauteur du parent dépend de
+  // l'image, qui dépend en % de la hauteur du parent) — le navigateur abandonne alors la
+  // contrainte de hauteur plutôt que de la deviner. On calcule donc la taille "contenue" (ratio
+  // préservé, jamais agrandie au-delà de la résolution native) en JS à partir de la taille
+  // mesurée du viewport, et on l'applique en pixels explicites — aucune ambiguïté possible.
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const update = () => setViewportSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const baseSize =
+    viewportSize && size && size.width > 0 && size.height > 0
+      ? (() => {
+          const scale = Math.min(viewportSize.w / size.width, viewportSize.h / size.height, 1);
+          return { width: size.width * scale, height: size.height * scale };
+        })()
+      : null;
   const pointersRef = useRef(new Map()); // pointerId -> {x,y} en coordonnées écran
   const panStateRef = useRef(null); // { startMid, startPan } pendant un geste à 2 doigts
   // Reste vrai tant qu'AU MOINS UN doigt du geste à 2 doigts est encore posé — pas juste
@@ -424,30 +452,62 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
     >
+      {/* Taille en pixels explicites (baseSize, calculée en JS — voir plus haut) plutôt qu'en
+          CSS max-width/max-height : évite la dépendance circulaire qui empêchait la contrainte
+          de s'appliquer. top/left 50% + translate(-50%,-50%) recentre la boîte, combiné au
+          pan/zoom dans le même transform. Tant que baseSize n'est pas encore mesuré (1er
+          rendu), fallback sur max-w-full/max-h-full — flash d'un seul frame, sans conséquence. */}
       <div
-        className="absolute inset-0 flex items-center justify-center"
-        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center center' }}
+        className={baseSize ? 'absolute top-1/2 left-1/2' : 'absolute top-1/2 left-1/2 max-w-full max-h-full'}
+        style={{
+          ...(baseSize ? { width: baseSize.width, height: baseSize.height } : {}),
+          transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          transformOrigin: 'center center',
+        }}
       >
-        <div className="relative max-w-full max-h-full">
-          <img ref={imgRef} src={src} alt={alt} draggable={false} className="max-w-full max-h-full select-none cursor-crosshair" />
-          {size && points.map((p, i) => (
+        <img
+          ref={imgRef}
+          src={src}
+          alt={alt}
+          draggable={false}
+          className={baseSize ? 'block w-full h-full select-none cursor-crosshair' : 'max-w-full max-h-full block select-none cursor-crosshair'}
+        />
+        {/* Le point (rond) et son étiquette sont positionnés INDÉPENDAMMENT, tous deux ancrés
+            au même left/top — retour terrain "bug d'affichage du point" : les regrouper dans
+            un seul conteneur flex puis centrer CE conteneur avec translate(-50%,-50%) décalait
+            le point lui-même (pas juste l'étiquette) du vrai point tapé, d'une distance
+            proportionnelle à la largeur du texte du label. Le point reste seul responsable de
+            représenter la coordonnée exacte ; l'étiquette est juste décalée à côté par un
+            offset fixe en pixels, sans influencer la position du point. */}
+        {size && points.map((p, i) => (
+          <div key={i} className="pointer-events-none">
             <div
-              key={i}
-              className="absolute flex items-center gap-1 pointer-events-none"
-              style={{ left: `${(p.x / size.width) * 100}%`, top: `${(p.y / size.height) * 100}%`, transform: 'translate(-50%,-50%)' }}
-            >
-              <div
-                className="rounded-full border-2 border-neutral-950 shrink-0"
-                style={{ width: i === dragIndex ? 16 : 12, height: i === dragIndex ? 16 : 12, background: color, boxShadow: onMovePoint ? '0 0 0 6px rgba(255,255,255,0.08)' : 'none' }}
-              />
-              {pointLabels?.[i] && (
-                <span className="px-1 rounded bg-black/50 text-[8px] leading-tight whitespace-nowrap" style={{ color }}>
-                  {pointLabels[i]}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
+              className="absolute rounded-full border-2 border-neutral-950"
+              style={{
+                left: `${(p.x / size.width) * 100}%`,
+                top: `${(p.y / size.height) * 100}%`,
+                width: i === dragIndex ? 16 : 12,
+                height: i === dragIndex ? 16 : 12,
+                background: color,
+                boxShadow: onMovePoint ? '0 0 0 6px rgba(255,255,255,0.08)' : 'none',
+                transform: 'translate(-50%,-50%)',
+              }}
+            />
+            {pointLabels?.[i] && (
+              <span
+                className="absolute px-1 rounded bg-black/50 text-[8px] leading-tight whitespace-nowrap"
+                style={{
+                  left: `${(p.x / size.width) * 100}%`,
+                  top: `${(p.y / size.height) * 100}%`,
+                  transform: 'translate(10px, -50%)',
+                  color,
+                }}
+              >
+                {pointLabels[i]}
+              </span>
+            )}
+          </div>
+        ))}
       </div>
 
       {loupe && size && <TapLoupe imgRef={imgRef} pos={loupe} color={color} />}
@@ -1155,6 +1215,16 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
 
       {screen === 'measure' && currentMeasureStep && (
         <div className="flex-1 flex flex-col">
+          {/* Retour terrain : "bug d'affichage quand l'image est choisie" — le texte
+              "glisse un point déjà posé..." n'apparaît qu'au 1er point posé, ce qui change la
+              hauteur de cet en-tête et donc l'espace dispo pour l'image en dessous (flex-1) :
+              l'image entière (et tous les points déjà posés) se redimensionnaient et
+              sautaient visuellement sous les yeux de l'utilisateur en train de viser le point
+              suivant. Toujours monté (juste invisible tant que non pertinent) plutôt que
+              conditionnellement retiré du DOM, pour que la hauteur de l'en-tête — donc la
+              taille de l'image — reste strictement constante pendant toute la mesure. Idem
+              pour l'indice anatomique (pointHints), avec une hauteur minimale réservée pour
+              2 lignes puisque son texte change (longueurs différentes selon le point). */}
           <div className="px-6 py-3 bg-neutral-900 border-b border-neutral-800">
             <p className="text-sm text-neutral-200">
               Touche {measureMaxPoints} points dans l'ordre : {currentMeasureStep.pointLabels.join(' → ')}.
@@ -1162,13 +1232,11 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             <p className="text-xs text-neutral-500 mt-1">
               {measurePoints.length}/{measureMaxPoints} points placés
               {currentMeasureStep.pointLabels[measurePoints.length] ? ` · prochain : ${currentMeasureStep.pointLabels[measurePoints.length]}` : ''}
-              {measurePoints.length > 0 ? ' · glisse un point déjà posé pour le corriger' : ''}
+              <span className={measurePoints.length > 0 ? '' : 'invisible'}> · glisse un point déjà posé pour le corriger</span>
             </p>
-            {currentMeasureStep.pointHints?.[measurePoints.length] && (
-              <p className="text-xs text-cyan-300 mt-1.5 leading-relaxed">
-                {currentMeasureStep.pointHints[measurePoints.length]}
-              </p>
-            )}
+            <p className="text-xs text-cyan-300 mt-1.5 leading-relaxed min-h-[2.5em]">
+              {currentMeasureStep.pointHints?.[measurePoints.length] ?? ''}
+            </p>
           </div>
 
           <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
@@ -1185,8 +1253,14 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
           </div>
 
           <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-4 space-y-3">
-            {measureResult && (
-              <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 space-y-1">
+            {/* Toujours monté (même bordure/padding, contenu conditionnel) une fois qu'un
+                résultat peut potentiellement apparaître à cette étape — sinon ce bloc surgit au
+                dernier point posé, agrandit le pied de page, et fait sauter visuellement l'image
+                (et tous les points déjà posés) juste au-dessus. Même famille de bug que le hint
+                d'en-tête plus haut. */}
+            <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 space-y-1 min-h-[4.5rem]">
+              {measureResult && (
+                <>
                 {currentMeasureStep.key === 'raise' && (
                   <>
                     <div className="text-2xl font-semibold text-cyan-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
@@ -1214,8 +1288,9 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                     Genou {measureResult.kneeAngle}°
                   </div>
                 )}
-              </div>
-            )}
+                </>
+              )}
+            </div>
 
             <div className="flex gap-3">
               <button onClick={() => setMeasurePoints((prev) => prev.slice(0, -1))} disabled={measurePoints.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400">
@@ -1246,12 +1321,15 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
 
       {screen === 'calibrate' && (
         <div className="flex-1 flex flex-col">
+          {/* Cf. commentaire équivalent sur l'écran 'measure' : le hint ne doit jamais changer
+              la hauteur de cet en-tête, sinon l'image (et les points déjà posés) se
+              redimensionnent et sautent visuellement au 1er point posé. */}
           <div className="px-6 py-3 bg-neutral-900 border-b border-neutral-800">
             <p className="text-sm text-neutral-200">
               Touche 2 points correspondant à une longueur connue (ex. les deux extrémités du cintre).
             </p>
             <p className="text-xs text-neutral-500 mt-1">
-              {taps.length}/2 points placés{taps.length > 0 ? ' · glisse un point déjà posé pour le corriger' : ''}
+              {taps.length}/2 points placés<span className={taps.length > 0 ? '' : 'invisible'}> · glisse un point déjà posé pour le corriger</span>
             </p>
           </div>
 
@@ -1278,11 +1356,12 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               />
             </label>
 
-            {pixelLength && (
-              <div className="text-xs text-neutral-400" style={{ fontFamily: 'ui-monospace, monospace' }}>
-                {pixelLength.toFixed(0)}px mesurés · {cmPerPixel?.toFixed(3)} cm/px
-              </div>
-            )}
+            {/* Toujours monté (même famille de bug que les hints d'en-tête) : ce texte
+                n'apparaît qu'une fois les 2 points posés, ce qui ferait sauter visuellement les
+                2 points déjà posés juste au moment où l'utilisateur finit de les placer. */}
+            <div className="text-xs text-neutral-400 min-h-[1em]" style={{ fontFamily: 'ui-monospace, monospace' }}>
+              {pixelLength ? `${pixelLength.toFixed(0)}px mesurés · ${cmPerPixel?.toFixed(3)} cm/px` : ''}
+            </div>
 
             <div className="flex gap-3">
               <button onClick={() => setTaps((prev) => prev.slice(0, -1))} disabled={taps.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400">
