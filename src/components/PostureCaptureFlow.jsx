@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp, Crosshair, Upload, Lock } from 'lucide-react';
+import { Video, Camera, Square, RotateCcw, Check, AlertTriangle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Crosshair, Upload, Lock } from 'lucide-react';
 import {
   computeManualAslrAngle,
   computeManualTrialPmh,
@@ -124,6 +124,10 @@ const MANUAL_MEASURE_FINALIZE = {
   profile_video: (results) => ({ angles: buildManualTrialAngles(results[0], results[1]) }),
 };
 
+// Pas de défilement fin (screen 'review') — approximation à 30 im/s, suffisant pour naviguer
+// image par image sans avoir besoin du vrai frame rate exact de la vidéo importée.
+const FRAME_STEP_SEC = 1 / 30;
+
 // Mémorise la longueur du repère d'étalonnage (ex. largeur de cintre) d'une capture à
 // l'autre — c'est en général toujours le même repère, pas la peine de le retaper.
 const REF_LENGTH_STORAGE_KEY = 'posture-aero-ref-length-cm';
@@ -174,6 +178,114 @@ function ChecklistPanel({ mode, open, onToggle }) {
   );
 }
 
+// Loupe grossissante affichée pendant qu'un point est en train d'être placé (avant de relâcher
+// le doigt) — retour terrain : "quand je zoom les points restent de la même taille, manque de
+// précision" sur l'étalonnage de la photo frontale. Faire grossir le marqueur lui-même n'aurait
+// rien résolu (ce n'est pas lui qui manque de précision, c'est le doigt qui cache le pixel visé)
+// — la vraie solution est de voir un aperçu agrandi de la zone sous le doigt pendant le geste,
+// indépendamment du zoom navigateur (fiable partout, pas de dépendance au pinch-zoom).
+function TapLoupe({ imgRef, pos, color }) {
+  const canvasRef = useRef(null);
+  const SIZE = 100;
+  const ZOOM = 3.5;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img) return;
+    const ctx = canvas.getContext('2d');
+    const crop = SIZE / ZOOM;
+    ctx.imageSmoothingEnabled = false; // zoom net (pixelisé), pas flou — c'est ce qui aide à viser
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    ctx.drawImage(img, pos.imgX - crop / 2, pos.imgY - crop / 2, crop, crop, 0, 0, SIZE, SIZE);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(SIZE / 2, 0);
+    ctx.lineTo(SIZE / 2, SIZE);
+    ctx.moveTo(0, SIZE / 2);
+    ctx.lineTo(SIZE, SIZE / 2);
+    ctx.stroke();
+  }, [imgRef, pos.imgX, pos.imgY, color]);
+
+  // Décalée au-dessus du doigt pour ne pas être cachée par lui ; bascule en dessous si on
+  // touche trop près du haut de l'image.
+  const top = pos.screenY > 140 ? pos.screenY - 130 : pos.screenY + 40;
+
+  return (
+    <div
+      className="absolute pointer-events-none rounded-full overflow-hidden shadow-lg z-10"
+      style={{ left: pos.screenX, top, transform: 'translate(-50%, 0)', width: SIZE, height: SIZE, border: `2px solid ${color}` }}
+    >
+      <canvas ref={canvasRef} width={SIZE} height={SIZE} />
+    </div>
+  );
+}
+
+// Image tapable générique (étalonnage photo frontale, mesure manuelle ASLR/vidéo profil) :
+// affiche une loupe grossissante pendant qu'on place un point (voir TapLoupe), commite le point
+// au relâchement plutôt qu'au clic pour laisser le temps d'ajuster la position. `size` est la
+// résolution réelle de l'image (naturalWidth/naturalHeight), utilisée à la fois pour convertir
+// les coordonnées écran -> image et pour le crop de la loupe.
+function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, color = '#22d3ee' }) {
+  const imgRef = useRef(null);
+  const [loupe, setLoupe] = useState(null);
+
+  const posFromEvent = (e) => {
+    if (!imgRef.current || !size) return null;
+    const rect = imgRef.current.getBoundingClientRect();
+    const clampedX = Math.min(Math.max(e.clientX, rect.left), rect.right);
+    const clampedY = Math.min(Math.max(e.clientY, rect.top), rect.bottom);
+    return {
+      screenX: clampedX - rect.left,
+      screenY: clampedY - rect.top,
+      imgX: ((clampedX - rect.left) / rect.width) * size.width,
+      imgY: ((clampedY - rect.top) / rect.height) * size.height,
+    };
+  };
+
+  const handlePointerActive = (e) => {
+    if (points.length >= maxPoints) return;
+    const pos = posFromEvent(e);
+    if (pos) setLoupe(pos);
+  };
+
+  const handlePointerUp = (e) => {
+    if (points.length >= maxPoints) return;
+    const pos = posFromEvent(e) ?? loupe;
+    setLoupe(null);
+    if (pos) onTap(pos.imgX, pos.imgY);
+  };
+
+  return (
+    <div
+      className="relative max-w-full max-h-full"
+      style={{ touchAction: 'none' }}
+      onPointerDown={handlePointerActive}
+      onPointerMove={handlePointerActive}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={() => setLoupe(null)}
+    >
+      <img ref={imgRef} src={src} alt={alt} draggable={false} className="max-w-full max-h-full select-none cursor-crosshair" />
+      {size && points.map((p, i) => (
+        <div
+          key={i}
+          className="absolute flex flex-col items-center pointer-events-none"
+          style={{ left: `${(p.x / size.width) * 100}%`, top: `${(p.y / size.height) * 100}%`, transform: 'translate(-50%,-50%)' }}
+        >
+          <div className="w-3 h-3 rounded-full border-2 border-neutral-950" style={{ background: color }} />
+          {pointLabels?.[i] && (
+            <span className="mt-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] whitespace-nowrap" style={{ color }}>
+              {pointLabels[i]}
+            </span>
+          )}
+        </div>
+      ))}
+      {loupe && size && <TapLoupe imgRef={imgRef} pos={loupe} color={color} />}
+    </div>
+  );
+}
+
 export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }) {
   const [screen, setScreen] = useState('intro'); // intro | camera | review | calibrate | measure
   const [mode, setMode] = useState(initialMode ?? null);
@@ -196,6 +308,12 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const [measureStillSize, setMeasureStillSize] = useState(null);
   const [measurePoints, setMeasurePoints] = useState([]);
   const [measureResults, setMeasureResults] = useState([]); // résultats des étapes déjà validées
+  // Défilement fin de la vidéo sur l'écran 'review' (screen 'review') : les contrôles natifs
+  // du <video> ne permettent de seeker qu'assez grossièrement au toucher — retour terrain
+  // ("la vidéo puisse défiler plus précisément, pas seconde par seconde") — trouver l'exacte
+  // image du point mort haut/bas ou de la jambe la plus haute en dépend directement.
+  const [reviewTime, setReviewTime] = useState(0);
+  const [reviewDuration, setReviewDuration] = useState(0);
 
   const videoRef = useRef(null);
   const reviewVideoRef = useRef(null);
@@ -430,14 +548,6 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
     setScreen('camera');
   };
 
-  const handleCalibrationTap = (e) => {
-    if (taps.length >= 2 || !canvasRef.current) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * canvasRef.current.width;
-    const y = ((e.clientY - rect.top) / rect.height) * canvasRef.current.height;
-    setTaps((prev) => [...prev, { x, y }]);
-  };
-
   const pixelLength = taps.length === 2 ? Math.hypot(taps[1].x - taps[0].x, taps[1].y - taps[0].y) : null;
   const cmPerPixel = pixelLength && refLengthCm ? Number(refLengthCm) / pixelLength : null;
 
@@ -456,6 +566,27 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   // avec les contrôles natifs du <video> — c'est à lui de trouver le bon moment (jambe la plus
   // haute pour l'ASLR, point mort haut/bas pour la vidéo profil), pas à un modèle de détecter
   // automatiquement.
+  // Défilement fin (screen 'review') — voir FRAME_STEP_SEC. On met en pause avant de bouger :
+  // avancer image par image pendant une lecture en cours n'aurait aucun sens.
+  const stepReviewFrame = (deltaFrames) => {
+    const video = reviewVideoRef.current;
+    if (!video) return;
+    video.pause();
+    const next = Math.min(Math.max(video.currentTime + deltaFrames * FRAME_STEP_SEC, 0), reviewDuration || video.duration || 0);
+    video.currentTime = next;
+    setReviewTime(next);
+  };
+
+  const handleReviewScrub = (e) => {
+    const video = reviewVideoRef.current;
+    const t = Number(e.target.value);
+    if (video) {
+      video.pause();
+      video.currentTime = t;
+    }
+    setReviewTime(t);
+  };
+
   const captureMeasureFrame = () => {
     const video = reviewVideoRef.current;
     const canvas = canvasRef.current;
@@ -469,14 +600,6 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
       setMeasurePoints([]);
       setScreen('measure');
     }, 'image/jpeg', 0.92);
-  };
-
-  const handleMeasureTap = (e) => {
-    if (measurePoints.length >= measureMaxPoints || !measureStillSize) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * measureStillSize.width;
-    const y = ((e.clientY - rect.top) / rect.height) * measureStillSize.height;
-    setMeasurePoints((prev) => [...prev, { x, y }]);
   };
 
   // Revenir choisir une autre image pour l'étape en cours (pas un redémarrage complet — la
@@ -731,8 +854,52 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             </div>
           )}
           <div className="flex-1 bg-black flex items-center justify-center">
-            <video ref={reviewVideoRef} src={capturedUrl} controls playsInline className="max-w-full max-h-full" />
+            <video
+              ref={reviewVideoRef}
+              src={capturedUrl}
+              controls
+              playsInline
+              className="max-w-full max-h-full"
+              onLoadedMetadata={(e) => setReviewDuration(e.currentTarget.duration)}
+              onTimeUpdate={(e) => setReviewTime(e.currentTarget.currentTime)}
+            />
           </div>
+          {currentMeasureStep && reviewDuration > 0 && (
+            // Défilement fin — les contrôles natifs du <video> ne permettent de seeker qu'assez
+            // grossièrement au toucher, insuffisant pour tomber pile sur la bonne image (retour
+            // terrain). Boutons ± image et curseur à pas fin (voir FRAME_STEP_SEC).
+            <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-3">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => stepReviewFrame(-1)}
+                  className="shrink-0 w-9 h-9 rounded-full border border-neutral-700 flex items-center justify-center text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  aria-label="Image précédente"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={reviewDuration}
+                  step={FRAME_STEP_SEC}
+                  value={reviewTime}
+                  onChange={handleReviewScrub}
+                  className="flex-1 accent-amber-400"
+                  aria-label="Défilement fin de la vidéo"
+                />
+                <button
+                  onClick={() => stepReviewFrame(1)}
+                  className="shrink-0 w-9 h-9 rounded-full border border-neutral-700 flex items-center justify-center text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  aria-label="Image suivante"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-neutral-500 mt-1.5 text-center" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                {reviewTime.toFixed(2)}s / {reviewDuration.toFixed(2)}s
+              </p>
+            </div>
+          )}
           <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-4 space-y-3">
             <div className="text-xs text-neutral-400" style={{ fontFamily: 'ui-monospace, monospace' }}>
               {capturedMeta && `${(capturedMeta.durationMs / 1000).toFixed(1)}s · ${capturedMeta.sizeKb} Ko`}
@@ -768,28 +935,15 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
           </div>
 
           <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
-            <img
+            <TapImage
               src={measureStillUrl}
               alt="Image choisie pour la mesure"
-              onClick={handleMeasureTap}
-              className="max-w-full max-h-full cursor-crosshair"
+              size={measureStillSize}
+              points={measurePoints}
+              pointLabels={currentMeasureStep.pointLabels}
+              maxPoints={measureMaxPoints}
+              onTap={(x, y) => setMeasurePoints((prev) => [...prev, { x, y }])}
             />
-            {measureStillSize && measurePoints.map((p, i) => (
-              <div
-                key={i}
-                className="absolute flex flex-col items-center pointer-events-none"
-                style={{
-                  left: `${(p.x / measureStillSize.width) * 100}%`,
-                  top: `${(p.y / measureStillSize.height) * 100}%`,
-                  transform: 'translate(-50%,-50%)',
-                }}
-              >
-                <div className="w-3 h-3 rounded-full bg-cyan-400 border-2 border-neutral-950" />
-                <span className="mt-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-cyan-200 whitespace-nowrap">
-                  {currentMeasureStep.pointLabels[i]}
-                </span>
-              </div>
-            ))}
           </div>
 
           <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-4 space-y-3">
@@ -859,24 +1013,14 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
           </div>
 
           <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
-            <img
+            <TapImage
               src={capturedUrl}
               alt="Photo frontale capturée"
-              onClick={handleCalibrationTap}
-              className="max-w-full max-h-full cursor-crosshair"
+              size={capturedMeta}
+              points={taps}
+              maxPoints={2}
+              onTap={(x, y) => setTaps((prev) => [...prev, { x, y }])}
             />
-            {/* Marqueurs de taps, positionnés en % relatif à l'image affichée */}
-            {capturedMeta && taps.map((t, i) => (
-              <div
-                key={i}
-                className="absolute w-3 h-3 rounded-full bg-cyan-400 border-2 border-neutral-950 pointer-events-none"
-                style={{
-                  left: `${(t.x / capturedMeta.width) * 100}%`,
-                  top: `${(t.y / capturedMeta.height) * 100}%`,
-                  transform: 'translate(-50%,-50%)',
-                }}
-              />
-            ))}
           </div>
 
           <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-4 space-y-3">
