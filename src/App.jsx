@@ -658,15 +658,23 @@ function TrialOverview({ trialNumber, pendingTrial, onOpenVideo, onOpenPhoto, on
 // Retour terrain : "le nom des points rend la lecture impossible" — chip à côté (pas sous) le
 // point, réduite, pour ne plus masquer l'image ni le point voisin (même correction que TapImage
 // dans PostureCaptureFlow.jsx, qui a le même souci sur les points en cours de pose).
+//
+// Point et étiquette positionnés INDÉPENDAMMENT, tous deux ancrés au même left/top — retour
+// terrain suivant "bug d'affichage du point" : les regrouper dans un conteneur flex puis centrer
+// CE conteneur avec translate(-50%,-50%) décalait le point lui-même (pas juste l'étiquette) de
+// la vraie coordonnée mesurée, d'une distance proportionnelle à la largeur du texte du label.
 function ReviewMarker({ point, size, label }) {
   if (!size) return null;
+  const left = `${(point.x / size.width) * 100}%`;
+  const top = `${(point.y / size.height) * 100}%`;
   return (
-    <div
-      className="absolute flex items-center gap-1 pointer-events-none"
-      style={{ left: `${(point.x / size.width) * 100}%`, top: `${(point.y / size.height) * 100}%`, transform: 'translate(-50%,-50%)' }}
-    >
-      <div className="w-3 h-3 rounded-full bg-cyan-400 border-2 border-neutral-950 shrink-0" />
-      {label && <span className="px-1 rounded bg-black/50 text-[8px] leading-tight text-cyan-200 whitespace-nowrap">{label}</span>}
+    <div className="pointer-events-none">
+      <div className="absolute w-3 h-3 rounded-full bg-cyan-400 border-2 border-neutral-950" style={{ left, top, transform: 'translate(-50%,-50%)' }} />
+      {label && (
+        <span className="absolute px-1 rounded bg-black/50 text-[8px] leading-tight text-cyan-200 whitespace-nowrap" style={{ left, top, transform: 'translate(10px, -50%)' }}>
+          {label}
+        </span>
+      )}
     </div>
   );
 }
