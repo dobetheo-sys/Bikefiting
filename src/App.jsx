@@ -22,7 +22,7 @@ import PostureCaptureFlow from './components/PostureCaptureFlow.jsx';
 import { getVisionFileset } from './capture/mediapipe-vision';
 import { createBikeFitSegmenter, toBikeFitBinaryMask } from './capture/segmentation-integration';
 import { computePFSA_cm2, KNEE_STRAIGHT_THRESHOLD } from './capture/capture-processing';
-import { aslrToFlexScore, computeReferenceSaddleHeightCm, runEngine } from './engine/posture-aero-engine';
+import { aslrToFlexScore, computeReferenceSaddleHeightCm, suggestNextAdjustment, runEngine } from './engine/posture-aero-engine';
 
 // App.jsx — orchestre toute la session : test de souplesse (ASLR) -> profil athlète ->
 // essais (vidéo profil + photo frontale + deltas matériel) -> runEngine (validation,
@@ -420,6 +420,8 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
   const minTrials = 3;
   const remaining = Math.max(0, minTrials - trials.length);
   const referenceSaddleHeightCm = athleteInseamCm > 0 ? computeReferenceSaddleHeightCm(athleteInseamCm) : null;
+  const lastTrial = trials.length > 0 ? trials[trials.length - 1] : null;
+  const nextAdjustment = lastTrial ? suggestNextAdjustment(lastTrial, profile) : null;
 
   return (
     <ScreenShell
@@ -489,6 +491,24 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
           </div>
         ))}
       </div>
+
+      {lastTrial && (
+        <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-4 mb-6">
+          <div className="text-xs tracking-widest text-amber-300 uppercase mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+            Suggestion pour le prochain essai
+          </div>
+          {nextAdjustment ? (
+            <p className="text-sm text-amber-100">{nextAdjustment.message}</p>
+          ) : (
+            <p className="text-sm text-amber-100">
+              Hanche, tronc et genou de {lastTrial.id} sont tous dans leur zone cible — rien à corriger côté angles pour l'instant.
+            </p>
+          )}
+          <p className="text-xs text-amber-100/60 mt-1.5">
+            Basé sur le paramètre le plus loin de sa zone cible sur ton dernier essai — indicatif, change un seul réglage à la fois et re-teste.
+          </p>
+        </div>
+      )}
 
       <p className="text-neutral-600 text-xs mb-6">
         Reprend automatiquement ici si tu quittes ou si le navigateur plante.

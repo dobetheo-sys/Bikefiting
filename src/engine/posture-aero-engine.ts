@@ -159,6 +159,62 @@ export function validateTrial(angles: TrialAngles, profile: AthleteProfile): Val
   return { valid: violations.length === 0, violations, warnings, margins };
 }
 
+// ---------- Suggestion de réglage entre 2 essais ----------
+// Retour terrain : "est-ce qu'on ne peut pas avoir cette réflexion entre chaque essai ? regarder
+// le paramètre le plus loin de la norme et donner une suggestion" — jusqu'ici ce raisonnement
+// (quel angle mesuré est le plus problématique, quel réglage vélo agit dessus) restait à faire
+// à la main, essai par essai. Automatise le même calcul : parmi hanche/tronc/genou, identifie
+// celui dont l'écart à sa zone cible (en degrés) est le plus grand, et donne le réglage vélo qui
+// agit dessus dans le bon sens.
+//
+// Relations directionnelles utilisées [SOURCED, convergence de sources pro Retül/BikeFittr/
+// BikeDynamics, mêmes sources que §3/§9 du spec] : plus de recul de selle ouvre la hanche, plus
+// de drop/reach la ferme ; une selle plus haute tend la jambe au point bas du cycle (genou plus
+// ouvert), plus basse la plie (genou plus fermé). Volontairement PAS de valeur en mm suggérée :
+// contrairement à la hauteur de selle (cf. computeReferenceSaddleHeightCm), aucune formule
+// fiable ne relie un écart en degrés à un delta en mm pour reach/recul/drop — donner un chiffre
+// inventerait exactement la fausse précision que l'appli évite ailleurs. Seule la direction et
+// le réglage à toucher sont fournis ; à l'athlète d'avancer par petits pas et de re-tester.
+export interface AdjustmentSuggestion {
+  param: 'hip' | 'trunk_high' | 'trunk_low' | 'knee_flexed' | 'knee_extended';
+  gapDeg: number; // écart par rapport à la zone cible, toujours > 0 (sinon pas de suggestion)
+  message: string;
+}
+
+export function suggestNextAdjustment(t: Trial, profile: AthleteProfile): AdjustmentSuggestion | null {
+  const hipTarget = HIP_TARGET_BY_FLEX[profile.hipFlexibilityScore];
+  const candidates: AdjustmentSuggestion[] = [
+    {
+      param: 'hip',
+      gapDeg: round1(Math.max(0, hipTarget - t.angles.hip.mean)),
+      message: `Hanche fermée à ${t.angles.hip.mean}° (cible ${hipTarget}° pour ta souplesse) — essaie de reculer la selle, ou de réduire le drop/reach, pour l'ouvrir.`,
+    },
+    {
+      param: 'trunk_high',
+      gapDeg: round1(Math.max(0, t.angles.trunk.mean - TRUNK_MAX)),
+      message: `Tronc à ${t.angles.trunk.mean}°, au-dessus du seuil aéro de ${TRUNK_MAX}° — essaie d'augmenter le drop (cintre plus bas) ou le reach.`,
+    },
+    {
+      param: 'trunk_low',
+      gapDeg: round1(Math.max(0, TRUNK_MIN - t.angles.trunk.mean)),
+      message: `Tronc à ${t.angles.trunk.mean}°, sous le minimum de ${TRUNK_MIN}° — essaie de réduire le drop pour te redresser un peu.`,
+    },
+    {
+      param: 'knee_flexed',
+      gapDeg: round1(Math.max(0, KNEE_MIN - t.angles.knee.min)),
+      message: `Genou trop plié au point le plus fermé du cycle (${t.angles.knee.min}°, sous ${KNEE_MIN}°) — essaie de monter la selle.`,
+    },
+    {
+      param: 'knee_extended',
+      gapDeg: round1(Math.max(0, t.angles.knee.max - KNEE_MAX)),
+      message: `Genou trop tendu au point le plus ouvert du cycle (${t.angles.knee.max}°, au-dessus de ${KNEE_MAX}°) — essaie de baisser la selle.`,
+    },
+  ];
+
+  const worst = candidates.reduce((a, b) => (b.gapDeg > a.gapDeg ? b : a));
+  return worst.gapDeg > 0 ? worst : null;
+}
+
 // ---------- §4 — Score confort ----------
 
 function quadPenalty(distance: number, scale: number, cap = 40): number {
