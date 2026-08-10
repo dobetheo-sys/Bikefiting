@@ -43,10 +43,10 @@ const MODES = {
     label: 'test souplesse (ASLR)',
     checklist: [
       'Allongé sur le dos, téléphone au sol/sur un support, vue de côté (sagittale)',
+      'Filme en mode paysage (téléphone à l\u2019horizontale) : plus de largeur pour te voir de près sans avoir à reculer autant',
       'Jambe non testée : garde-la tendue et bien à plat au sol pendant tout le test (sinon la mesure est faussée)',
-      'Téléphone à environ 1,5-2 m, dans la même pièce que toi (pas filmé depuis une pièce voisine ou par une porte) : assez de recul pour voir la jambe monter, mais tu dois rester grand dans l\u2019image',
-      'Ne filme pas à contre-jour : pas de fenêtre ou de lumière vive juste derrière toi',
-      'Cadrage : hanche, jambe testée ET pied entièrement visibles, même en haut de la levée',
+      'Cadrage : hanche, jambe testée ET pied entièrement visibles même en haut de la levée — rapproche-toi le plus possible sans sortir du cadre, plus tu es grand dans l\u2019image plus la mesure est fiable',
+      'Reste dans la même pièce que le téléphone (pas filmé depuis une pièce voisine ou par une porte), et évite le contre-jour (pas de fenêtre/lumière vive juste derrière toi)',
       'Jambe testée tendue, genou verrouillé',
       'Lève la jambe le plus haut possible sans plier le genou — arrête-toi si ça tire ou fait mal',
     ],

@@ -111,7 +111,7 @@ async function processAslrVideo(blob, onProgress, onModelReady) {
   // 0° valide — c'est un échec de mesure, à traiter comme tel.
   if (trace.engagedAtIndex === null) {
     throw new Error(
-      "On n'a pas réussi à mesurer la levée de ta jambe sur cette vidéo (pas assez d'images où tu es bien visible). Rapproche la caméra, reste dans la même pièce, évite de filmer à contre-jour, puis réessaie."
+      "On n'a pas réussi à mesurer la levée de ta jambe sur cette vidéo (pas assez d'images où tu es bien visible). Essaie de filmer en mode paysage et de te rapprocher le plus possible sans sortir du cadre, puis réessaie."
     );
   }
   return trace;
