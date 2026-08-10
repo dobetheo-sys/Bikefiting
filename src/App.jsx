@@ -22,7 +22,7 @@ import PostureCaptureFlow from './components/PostureCaptureFlow.jsx';
 import { getVisionFileset } from './capture/mediapipe-vision';
 import { createBikeFitSegmenter, toBikeFitBinaryMask } from './capture/segmentation-integration';
 import { computePFSA_cm2, KNEE_STRAIGHT_THRESHOLD } from './capture/capture-processing';
-import { aslrToFlexScore, runEngine } from './engine/posture-aero-engine';
+import { aslrToFlexScore, computeReferenceSaddleHeightCm, runEngine } from './engine/posture-aero-engine';
 
 // App.jsx — orchestre toute la session : test de souplesse (ASLR) -> profil athlète ->
 // essais (vidéo profil + photo frontale + deltas matériel) -> runEngine (validation,
@@ -337,8 +337,10 @@ function NumberField({ label, value, onChange, suffix, required, hint }) {
 function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
   const [heightCm, setHeightCm] = useState('178');
   const [raceDurationHours, setRaceDurationHours] = useState('2.5');
+  const [inseamCm, setInseamCm] = useState('');
   const flexScore = aslrToFlexScore(aslrAngle);
   const heightValid = Number(heightCm) > 0;
+  const referenceSaddleHeightCm = Number(inseamCm) > 0 ? computeReferenceSaddleHeightCm(Number(inseamCm)) : null;
 
   return (
     <ScreenShell
@@ -348,7 +350,13 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
       footer={
         <>
           <button
-            onClick={() => onSubmit(Number(heightCm), raceDurationHours ? Number(raceDurationHours) : undefined)}
+            onClick={() =>
+              onSubmit(
+                Number(heightCm),
+                raceDurationHours ? Number(raceDurationHours) : undefined,
+                Number(inseamCm) > 0 ? Number(inseamCm) : undefined
+              )
+            }
             disabled={!heightValid}
             className="w-full py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan-200 flex items-center justify-center gap-2"
           >
@@ -381,14 +389,37 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
       <div className="space-y-4 mb-6">
         <NumberField label="Ta taille" value={heightCm} onChange={setHeightCm} suffix="cm" required />
         <NumberField label="Durée de course estimée" value={raceDurationHours} onChange={setRaceDurationHours} suffix="h" />
+        <NumberField
+          label="Entrejambe"
+          value={inseamCm}
+          onChange={setInseamCm}
+          suffix="cm"
+          hint="Debout, du sol à l'entrejambe (sans chaussures). Optionnel — sert juste à te suggérer une hauteur de selle de référence si tu ne connais pas déjà ton réglage habituel."
+        />
       </div>
+
+      {referenceSaddleHeightCm && (
+        <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-6">
+          <div className="text-xs tracking-widest text-cyan-300 uppercase mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+            Hauteur de selle de référence
+          </div>
+          <div className="text-2xl font-semibold text-cyan-200" style={{ fontFamily: 'ui-monospace, monospace' }}>
+            {referenceSaddleHeightCm} cm
+          </div>
+          <p className="text-xs text-cyan-100/70 mt-1 leading-relaxed">
+            Du pédalier au haut de la selle, le long du tube de selle (formule LeMond, entrejambe × 0,883). Un point de
+            départ documenté si tu pars de zéro — pas une prescription, ajuste ensuite selon ton ressenti.
+          </p>
+        </div>
+      )}
     </ScreenShell>
   );
 }
 
-function SessionScreen({ profile, trials, onNewTrial, onAnalyze, onNewSession }) {
+function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze, onNewSession }) {
   const minTrials = 3;
   const remaining = Math.max(0, minTrials - trials.length);
+  const referenceSaddleHeightCm = athleteInseamCm > 0 ? computeReferenceSaddleHeightCm(athleteInseamCm) : null;
 
   return (
     <ScreenShell
@@ -419,6 +450,20 @@ function SessionScreen({ profile, trials, onNewTrial, onAnalyze, onNewSession })
       }
     >
       <p className="text-neutral-400 text-sm mb-3">Souplesse {profile.hipFlexibilityScore}/5</p>
+
+      {trials.length === 0 && referenceSaddleHeightCm && (
+        <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-4">
+          <div className="text-xs tracking-widest text-cyan-300 uppercase mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+            Avant ton premier essai
+          </div>
+          <p className="text-sm text-cyan-100">
+            Hauteur de selle de référence suggérée : <span className="font-semibold">{referenceSaddleHeightCm} cm</span> (pédalier → haut de selle).
+          </p>
+          <p className="text-xs text-cyan-100/70 mt-1">
+            Utile si tu ne connais pas déjà ton réglage habituel — sinon, garde le tien comme point de départ.
+          </p>
+        </div>
+      )}
 
       <div className="mb-1">
         <ProgressBar value={trials.length} max={minTrials} />
@@ -904,6 +949,7 @@ export default function App() {
   const [aslrKneeAngle, setAslrKneeAngle] = useState(null);
   const [profile, setProfile] = useState(() => persisted?.profile ?? null);
   const [athleteHeightCm, setAthleteHeightCm] = useState(() => persisted?.athleteHeightCm ?? null);
+  const [athleteInseamCm, setAthleteInseamCm] = useState(() => persisted?.athleteInseamCm ?? null);
   const [trials, setTrials] = useState(() => persisted?.trials ?? []);
   const [pendingTrial, setPendingTrial] = useState(null);
   const [captureKey, setCaptureKey] = useState(0);
@@ -914,11 +960,11 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ aslrAngle, profile, athleteHeightCm, trials }));
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ aslrAngle, profile, athleteHeightCm, athleteInseamCm, trials }));
     } catch {
       // stockage indisponible (navigation privée, quota) — pas bloquant, juste pas de reprise possible
     }
-  }, [aslrAngle, profile, athleteHeightCm, trials]);
+  }, [aslrAngle, profile, athleteHeightCm, athleteInseamCm, trials]);
 
   const startNewSession = useCallback(() => {
     try {
@@ -930,6 +976,7 @@ export default function App() {
     setAslrKneeAngle(null);
     setProfile(null);
     setAthleteHeightCm(null);
+    setAthleteInseamCm(null);
     setTrials([]);
     setPendingTrial(null);
     setResult(null);
@@ -957,8 +1004,9 @@ export default function App() {
     setStage('profile-form');
   }, []);
 
-  const handleProfileSubmit = useCallback((heightCm, raceDurationHours) => {
+  const handleProfileSubmit = useCallback((heightCm, raceDurationHours, inseamCm) => {
     setAthleteHeightCm(heightCm);
+    setAthleteInseamCm(inseamCm ?? null);
     setProfile({ hipFlexibilityScore: aslrToFlexScore(aslrAngle), raceDurationHours });
     setStage('session');
   }, [aslrAngle]);
@@ -1147,6 +1195,7 @@ export default function App() {
         <SessionScreen
           profile={profile}
           trials={trials}
+          athleteInseamCm={athleteInseamCm}
           onNewTrial={startNewTrial}
           onAnalyze={runAnalysis}
           onNewSession={startNewSession}

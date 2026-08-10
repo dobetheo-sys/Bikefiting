@@ -2,6 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   aslrToFlexScore,
+  computeReferenceSaddleHeightCm,
   runEngine,
   recalibrateWeights,
   type Trial,
@@ -29,6 +30,16 @@ describe('aslrToFlexScore — §3.1 du spec, seuil clinique 80°', () => {
   test('75° -> score 3 (juste sous le seuil clinique de 80°)', () => assert.equal(aslrToFlexScore(75), 3));
   test('80° pile -> score 4 (ROM normale)', () => assert.equal(aslrToFlexScore(80), 4));
   test('95° -> score 5', () => assert.equal(aslrToFlexScore(95), 5));
+});
+
+describe('computeReferenceSaddleHeightCm — formule LeMond (entrejambe × 0.883)', () => {
+  test('entrejambe 82cm -> 72.4cm (calcul manuel : 82 × 0.883 = 72.406)', () => {
+    assert.equal(computeReferenceSaddleHeightCm(82), 72.4);
+  });
+  test('lève une erreur explicite si entrejambe <= 0', () => {
+    assert.throws(() => computeReferenceSaddleHeightCm(0), /entrejambe doit être > 0/);
+    assert.throws(() => computeReferenceSaddleHeightCm(-5), /entrejambe doit être > 0/);
+  });
 });
 
 describe('runEngine — validation, scoring, sélection Pareto', () => {
