@@ -906,6 +906,38 @@ function ProfileCard({ title, accent, profile }) {
   );
 }
 
+// Retour terrain : un essai exclu ("0 essai(s) valide(s)") ne disait jamais POURQUOI — l'app
+// avait déjà la raison (validateTrial retourne violations[].param/value/bound) mais ne
+// l'affichait pas, forçant l'utilisateur à deviner. Traduit chaque violation en phrase concrète,
+// avec la valeur mesurée et le seuil, pour que l'utilisateur sache exactement quoi corriger.
+function formatViolation(v) {
+  switch (v.param) {
+    case 'hip_floor':
+      return `hanche trop fermée (${v.value}° < ${v.bound}° mini)`;
+    case 'trunk_min':
+      return `tronc trop couché (${v.value}° < ${v.bound}° mini)`;
+    case 'trunk_max':
+      return `tronc pas assez couché pour une position aéro (${v.value}° > ${v.bound}° maxi)`;
+    case 'knee_range':
+      return `genou hors de la plage validée sur le cycle de pédalage (${v.value}° en moyenne)`;
+    default:
+      return `${v.param} (${v.value})`;
+  }
+}
+
+function ExcludedTrialsList({ excludedTrials }) {
+  if (excludedTrials.length === 0) return null;
+  return (
+    <div className="space-y-2 mb-6">
+      {excludedTrials.map((e) => (
+        <div key={e.trial_id} className="text-xs text-neutral-500" style={{ fontFamily: 'ui-monospace, monospace' }}>
+          {e.trial_id} : {e.violations.map(formatViolation).join(', ')}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ResultsScreen({ result, onBack }) {
   return (
     <ScreenShell
@@ -922,6 +954,7 @@ function ResultsScreen({ result, onBack }) {
           <>
             <h1 className="text-xl font-semibold mb-4">Pas encore assez d’essais valides</h1>
             <p className="text-neutral-400 text-sm mb-6">{result.message}</p>
+            <ExcludedTrialsList excludedTrials={result.excluded_trials} />
           </>
         ) : (
           <>
@@ -938,11 +971,7 @@ function ResultsScreen({ result, onBack }) {
             ) : (
               <p className="text-neutral-400 text-sm my-6">Aucun front Pareto disponible.</p>
             )}
-            {result.excluded_trials.length > 0 && (
-              <div className="text-xs text-neutral-500 mb-6" style={{ fontFamily: 'ui-monospace, monospace' }}>
-                Exclus : {result.excluded_trials.map((e) => `${e.trial_id} (${e.violations[0]?.param})`).join(', ')}
-              </div>
-            )}
+            <ExcludedTrialsList excludedTrials={result.excluded_trials} />
           </>
         )}
       </div>
