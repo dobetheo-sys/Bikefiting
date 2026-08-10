@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   aslrToFlexScore,
   computeReferenceSaddleHeightCm,
+  suggestNextAdjustment,
   runEngine,
   recalibrateWeights,
   type Trial,
@@ -39,6 +40,50 @@ describe('computeReferenceSaddleHeightCm — formule LeMond (entrejambe × 0.883
   test('lève une erreur explicite si entrejambe <= 0', () => {
     assert.throws(() => computeReferenceSaddleHeightCm(0), /entrejambe doit être > 0/);
     assert.throws(() => computeReferenceSaddleHeightCm(-5), /entrejambe doit être > 0/);
+  });
+});
+
+describe('suggestNextAdjustment — écart le plus grand -> réglage vélo à toucher', () => {
+  const profile: AthleteProfile = { hipFlexibilityScore: 3 }; // cible hanche 46°
+
+  test('tronc trop haut (cas réel terrain, essai à 745mm/125/515/95) -> suggère plus de drop/reach', () => {
+    const t = mkTrial('t1', 47.5, 19.2, 722.4, 2, { saddleHeightMm: 745, saddleSetbackMm: 125, reachMm: 515, dropMm: 95 });
+    const s = suggestNextAdjustment(t, profile);
+    assert.equal(s?.param, 'trunk_high');
+    assert.equal(s?.gapDeg, 4.2); // 19.2 - 15
+    assert.match(s?.message ?? '', /drop/);
+  });
+
+  test('hanche plus fermée que la cible -> suggère reculer la selle / réduire drop-reach', () => {
+    const t = mkTrial('t2', 41, 10, 700, 2, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 }); // tronc 10° = dans la zone [5,15]
+    const s = suggestNextAdjustment(t, profile);
+    assert.equal(s?.param, 'hip');
+    assert.equal(s?.gapDeg, 5); // cible 46 - hanche 41
+    assert.match(s?.message ?? '', /reculer la selle/);
+  });
+
+  test('genou trop plié au point bas -> suggère de monter la selle', () => {
+    const t: Trial = {
+      id: 't3',
+      angles: {
+        hip: { mean: 46, min: 43, max: 49, amplitude: 6, variance: 1 },
+        trunk: { mean: 10, min: 8, max: 12, amplitude: 4, variance: 0.5 },
+        knee: { mean: 133, min: 130, max: 145, amplitude: 15, variance: 0.5 }, // min 130 < KNEE_MIN 137
+        ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
+        wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+      },
+      frontal: { pFSA_cm2: 700, athleteHeight_cm: 178, headOffset_cm: 2 },
+      deltas: { saddleHeightMm: 700, reachMm: 515, dropMm: 95 },
+    };
+    const s = suggestNextAdjustment(t, profile);
+    assert.equal(s?.param, 'knee_flexed');
+    assert.equal(s?.gapDeg, 7); // 137 - 130
+    assert.match(s?.message ?? '', /monter la selle/);
+  });
+
+  test('aucun paramètre hors de sa zone cible -> pas de suggestion', () => {
+    const t = mkTrial('t4', 47, 10, 700, 2, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 }); // hanche > cible 46, tronc dans [5,15], genou par défaut dans [137,150]
+    assert.equal(suggestNextAdjustment(t, profile), null);
   });
 });
 
