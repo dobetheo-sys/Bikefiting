@@ -459,6 +459,7 @@ function formatDeltas(deltas) {
   const parts = [`selle ${formatDelta(deltas.saddleHeightMm)}`];
   if (deltas.saddleSetbackMm !== undefined) parts.push(`recul ${formatDelta(deltas.saddleSetbackMm)}`);
   parts.push(`reach ${formatDelta(deltas.reachMm)}`, `drop ${formatDelta(deltas.dropMm)}`);
+  if (deltas.hasAeroBars !== undefined) parts.push(deltas.hasAeroBars ? 'prolongateurs' : 'sans prolongateurs');
   return parts.join(' · ');
 }
 
@@ -631,6 +632,7 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
   const [saddleSetbackMm, setSaddleSetbackMm] = useState(String(initialDeltas?.saddleSetbackMm ?? 0));
   const [reachMm, setReachMm] = useState(String(initialDeltas?.reachMm ?? 0));
   const [dropMm, setDropMm] = useState(String(initialDeltas?.dropMm ?? 0));
+  const [hasAeroBars, setHasAeroBars] = useState(initialDeltas?.hasAeroBars ?? false);
 
   return (
     <ScreenShell
@@ -648,6 +650,7 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
                 saddleSetbackMm: Number(saddleSetbackMm),
                 reachMm: Number(reachMm),
                 dropMm: Number(dropMm),
+                hasAeroBars,
               })
             }
             className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200"
@@ -693,6 +696,33 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
           suffix="mm"
           hint="Différence de hauteur entre la selle et le cintre. + = cintre plus bas, position plus aéro/engagée."
         />
+
+        <div>
+          <div className="text-sm text-neutral-200 mb-1.5">Prolongateurs</div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setHasAeroBars(true)}
+              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+                hasAeroBars ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              }`}
+            >
+              Oui
+            </button>
+            <button
+              type="button"
+              onClick={() => setHasAeroBars(false)}
+              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+                !hasAeroBars ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              }`}
+            >
+              Non
+            </button>
+          </div>
+          <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
+            Le vélo est-il équipé de prolongateurs (guidon aéro/triathlon) pour cet essai ? Ça change beaucoup l'aérodynamisme et la position des mains.
+          </p>
+        </div>
       </div>
       <p className="text-xs text-neutral-500 -mt-4 mb-6">
         Idéalement, change un seul réglage à la fois entre deux essais — c'est le seul moyen de savoir lequel a fait la différence.

@@ -39,11 +39,13 @@ export interface Trial {
   id: string;
   angles: TrialAngles;
   frontal: FrontalCapture;
-  // saddleSetbackMm optionnel : ajouté après coup (retour d'audit bikefitting — le recul de
-  // selle manquait alors qu'il conditionne directement l'angle hanche/genou à un trunk angle
-  // donné) ; optionnel pour ne pas casser les Trial déjà persistés en localStorage avant
-  // l'ajout du champ.
-  deltas: { saddleHeightMm: number; saddleSetbackMm?: number; reachMm: number; dropMm: number };
+  // saddleSetbackMm/hasAeroBars optionnels : ajoutés après coup (retour terrain), optionnels
+  // pour ne pas casser les Trial déjà persistés en localStorage avant l'ajout des champs.
+  // saddleSetbackMm : le recul de selle manquait alors qu'il conditionne directement l'angle
+  // hanche/genou à un trunk angle donné (retour d'audit bikefitting). hasAeroBars : purement
+  // informatif (affiché, pas utilisé par le moteur) — le vélo a-t-il des prolongateurs pour cet
+  // essai, ça change beaucoup l'aérodynamisme et la position des mains.
+  deltas: { saddleHeightMm: number; saddleSetbackMm?: number; reachMm: number; dropMm: number; hasAeroBars?: boolean };
 }
 
 export interface Violation {
