@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   extractTrialAngles,
   extractAslrAngle,
+  extractAslrAngleTrace,
   computePFSA_cm2,
   IDX,
   type PoseFrame,
@@ -147,6 +148,28 @@ function synthAslrFramesWithSetup(): PoseFrame[] {
   return [...setupFrames, ...synthAslrFrames()];
 }
 
+/**
+ * Reproduit le cas réel du 10/08/2026 : une vidéo filmée trop loin et à contre-jour (caméra
+ * dans une autre pièce, à travers une porte, en direction d'une fenêtre) n'a laissé le modèle
+ * détecter QUE des frames "genou plié" (installation) — jamais la levée elle-même. Le genou
+ * ne se redresse jamais au-dessus du seuil, donc la levée n'est jamais "engagée".
+ */
+function synthAslrFramesNeverEngaged(): PoseFrame[] {
+  const hip: Landmark = { x: 0.5, y: 0.5, visibility: 0.95 };
+  const crouchKnee: Landmark = { x: hip.x + 0.05, y: hip.y - 0.15, visibility: 0.9 };
+  const crouchAnkle: Landmark = { x: hip.x + 0.02, y: hip.y - 0.02, visibility: 0.85 };
+  const frames: PoseFrame[] = [];
+  for (let i = 0; i < 5; i++) {
+    const landmarks: Landmark[] = new Array(33).fill({ x: 0, y: 0, visibility: 0 });
+    landmarks[IDX.RIGHT_HIP] = hip;
+    landmarks[IDX.LEFT_HIP] = { x: 0, y: 0, visibility: 0 };
+    landmarks[IDX.RIGHT_KNEE] = crouchKnee;
+    landmarks[IDX.RIGHT_ANKLE] = crouchAnkle;
+    frames.push({ landmarks, timestampMs: i * 33 });
+  }
+  return frames;
+}
+
 describe('extractAslrAngle — §3.1 du spec, point d\'arrêt = genou qui plie', () => {
   test('reprend le max de la cuisse tant que le genou reste verrouillé (75°, pas 85°)', () => {
     assert.equal(extractAslrAngle(synthAslrFrames()), 75);
@@ -158,6 +181,12 @@ describe('extractAslrAngle — §3.1 du spec, point d\'arrêt = genou qui plie',
 
   test('ignore un genou plié pendant l\'installation, avant que la levée ne commence (retour terrain 08/08/2026)', () => {
     assert.equal(extractAslrAngle(synthAslrFramesWithSetup()), 75);
+  });
+
+  test('engagedAtIndex reste null si la levée n\'a jamais été détectée — un 0° silencieux serait trompeur (retour terrain 10/08/2026)', () => {
+    const trace = extractAslrAngleTrace(synthAslrFramesNeverEngaged());
+    assert.equal(trace.engagedAtIndex, null);
+    assert.equal(trace.angle, 0);
   });
 });
 
