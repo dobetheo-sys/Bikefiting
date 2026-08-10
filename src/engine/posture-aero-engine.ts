@@ -85,6 +85,23 @@ export function aslrToFlexScore(angleDeg: number): 1 | 2 | 3 | 4 | 5 {
   return 5;
 }
 
+// ---------- Hauteur de selle de référence (formule LeMond) ----------
+// Retour terrain : "plutôt un réglage de base sur le vélo avant, comme une norme pour
+// l'athlète" — un point de départ documenté si l'athlète ne connaît pas déjà son réglage
+// habituel, pas une prescription. Volontairement limité à la hauteur de selle : c'est la seule
+// des 4 valeurs de TrialDeltasForm (hauteur/recul selle, reach, drop) qui a une formule
+// largement citée et reproductible (LeMond, popularisée dans "Greg LeMond's Complete Book of
+// Bicycling", 1987) ; reach/recul/drop dépendent trop du vélo, de la souplesse et de la
+// discipline pour qu'une "norme" universelle ait un sens — en proposer une inventerait une
+// fausse précision, ce que l'appli a justement évité de faire ailleurs (cf. les corrections
+// successives sur la détection ASLR).
+const LEMOND_SADDLE_HEIGHT_RATIO = 0.883; // [SOURCED] entrejambe -> hauteur pédalier–haut de selle
+
+export function computeReferenceSaddleHeightCm(inseamCm: number): number {
+  if (inseamCm <= 0) throw new Error('computeReferenceSaddleHeightCm: entrejambe doit être > 0');
+  return round1(inseamCm * LEMOND_SADDLE_HEIGHT_RATIO);
+}
+
 // ---------- §3 — Contraintes dures ----------
 
 const HIP_FLOOR_ABS = 40; // [SOURCED] Retül/BikeFittr — sous 40°, perte de puissance 5-15% chez la majorité
