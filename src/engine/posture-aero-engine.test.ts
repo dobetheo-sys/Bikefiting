@@ -6,6 +6,7 @@ import {
   suggestNextAdjustment,
   validateTrial,
   computeComfortScore,
+  computeAeroScore,
   runEngine,
   recalibrateWeights,
   type Trial,
@@ -91,6 +92,58 @@ describe('suggestNextAdjustment — écart le plus grand -> réglage vélo à to
   test("objectif 'comfort' -> pas de suggestion tronc même très hors plage (pas de cible sourcée)", () => {
     const t = mkTrial('t5', 47, 35, 700, 2, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 }); // tronc 35°, hanche > cible, genou par défaut ok
     assert.equal(suggestNextAdjustment(t, { hipFlexibilityScore: 3, goal: 'comfort' }), null);
+  });
+});
+
+// Audit fiabilité : un angle NaN (2 points tapés au même endroit — angleAt() dans
+// capture-processing.ts retourne NaN pour un vecteur de longueur nulle) ne doit JAMAIS produire
+// un essai valide : les comparaisons < / > utilisées plus bas dans validateTrial valent toutes
+// silencieusement false pour NaN, donc sans ce garde-fou explicite un essai corrompu serait
+// accepté (et pourrait même dominer dans paretoFront, aucune comparaison NaN >= n'étant jamais
+// vraie non plus).
+describe('computeAeroScore — garde-fous division par zéro', () => {
+  test('cohortMaxPFSANorm = 0 (session entière à pFSA 0) -> score 0, pas NaN', () => {
+    const t = mkTrial('t1', 46, 10, 0, 0, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 });
+    const score = computeAeroScore(t, 0);
+    assert.equal(Number.isNaN(score), false);
+    assert.ok(score >= 0);
+  });
+
+  test('athleteHeight_cm falsy -> score défini (pas NaN)', () => {
+    const t = mkTrial('t1', 46, 10, 700, 0, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 });
+    t.frontal.athleteHeight_cm = 0;
+    const score = computeAeroScore(t, 5);
+    assert.equal(Number.isNaN(score), false);
+  });
+});
+
+describe('validateTrial — garde-fou NaN (2 points tapés confondus)', () => {
+  const profile: AthleteProfile = { hipFlexibilityScore: 3 };
+
+  test('hanche NaN -> essai invalide avec une violation invalid_measurement, pas silencieusement accepté', () => {
+    const angles = {
+      hip: { mean: NaN, min: NaN, max: NaN, amplitude: 0, variance: 0 },
+      trunk: { mean: 10, min: 8, max: 12, amplitude: 4, variance: 0.5 },
+      knee: { mean: 143, min: 139, max: 148, amplitude: 9, variance: 0.5 },
+      ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
+      wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+    };
+    const v = validateTrial(angles, profile);
+    assert.equal(v.valid, false);
+    assert.equal(v.violations[0]?.param, 'invalid_measurement');
+  });
+
+  test('genou NaN -> également détecté, même si hanche/tronc sont valides', () => {
+    const angles = {
+      hip: { mean: 46, min: 43, max: 49, amplitude: 6, variance: 1 },
+      trunk: { mean: 10, min: 8, max: 12, amplitude: 4, variance: 0.5 },
+      knee: { mean: NaN, min: NaN, max: NaN, amplitude: 0, variance: 0 },
+      ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
+      wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+    };
+    const v = validateTrial(angles, profile);
+    assert.equal(v.valid, false);
+    assert.equal(v.violations[0]?.param, 'invalid_measurement');
   });
 });
 

@@ -138,6 +138,20 @@ export function validateTrial(angles: TrialAngles, profile: AthleteProfile): Val
   const margins: Record<string, number> = {};
   const goal = profile.goal ?? 'aero';
 
+  // Garde-fou défensif : angleAt()/angleVsHorizontal() (capture-processing.ts) retournent NaN
+  // quand 2 points tapés coïncident. La couche UI (measure screen) filtre déjà ce cas avant
+  // d'enregistrer un essai, mais validateTrial est la couche d'autorité pour la validité d'un
+  // essai — s'appuyer uniquement sur l'UI serait fragile. Sans ce garde-fou, TOUTES les
+  // comparaisons numériques ci-dessous (<, >) valent silencieusement false pour NaN : un essai
+  // avec un angle NaN ne serait jamais exclu ici, et ne serait jamais dominé dans paretoFront
+  // (b.comfortScore >= a.comfortScore est aussi toujours false avec NaN) — il resterait sur la
+  // frontière et pourrait ressortir comme une des 3 positions recommandées.
+  const numericFields = [angles.hip.mean, angles.trunk.mean, angles.knee.mean, angles.knee.min, angles.knee.max];
+  if (numericFields.some((v) => !Number.isFinite(v))) {
+    violations.push({ param: 'invalid_measurement', value: NaN, bound: 0 });
+    return { valid: false, violations, warnings, margins };
+  }
+
   // Hanche : plancher absolu, indépendant de la souplesse déclarée ET de l'objectif (perte de
   // puissance mesurée, pas une question de style de position — cf. AthleteProfile.goal)
   if (angles.hip.mean < HIP_FLOOR_ABS) {
@@ -280,7 +294,14 @@ const AERO_WEIGHTS = { pfsa: 0.65, trunk: 0.25, head: 0.10 }; // [DEFAULT] pond�
 
 export function computeAeroScore(t: Trial, cohortMaxPFSANorm: number): number {
   const pfsaNorm = t.frontal.pFSA_cm2 / t.frontal.athleteHeight_cm;
-  const pfsaScore = 100 * (1 - pfsaNorm / cohortMaxPFSANorm); // relatif aux essais de LA session, jamais absolu
+  // Audit fiabilité : sans ce garde-fou, cohortMaxPFSANorm === 0 (tous les essais de la session
+  // à pFSA=0 — ex. segmentation ayant échoué sur toute la session, photos trop sombres/mal
+  // cadrées) ou athleteHeight_cm falsy (ancienne session persistée avant que ce champ soit
+  // obligatoire) produit un score NaN affiché tel quel sur l'écran de résultats. Comme le score
+  // est "relatif aux essais de LA session, jamais absolu" (cf. commentaire ci-dessous), un
+  // dénominateur nul signifie qu'aucune comparaison relative n'a de sens ici : neutre (0) plutôt
+  // que NaN, les autres composantes (trunk/head) restent utilisables.
+  const pfsaScore = cohortMaxPFSANorm > 0 && Number.isFinite(pfsaNorm) ? 100 * (1 - pfsaNorm / cohortMaxPFSANorm) : 0; // relatif aux essais de LA session, jamais absolu
 
   const trunkScore = 100 * (1 - (t.angles.trunk.mean - TRUNK_MIN) / (TRUNK_MAX - TRUNK_MIN));
 
@@ -363,7 +384,12 @@ export function runEngine(trials: Trial[], profile: AthleteProfile, weights: Sub
     };
   }
 
-  const cohortMaxPFSANorm = Math.max(...validTrials.map((t) => t.frontal.pFSA_cm2 / t.frontal.athleteHeight_cm));
+  // Filtre les valeurs non finies avant le max : sans ça, un seul essai avec athleteHeight_cm
+  // falsy (0/null, ancienne session persistée) donnerait un NaN qui empoisonnerait Math.max
+  // pour TOUTE la cohorte (Math.max renvoie NaN dès qu'un seul argument l'est) — un essai
+  // corrompu ferait perdre le score aéro relatif de tous les autres essais, pourtant valides.
+  const pfsaNorms = validTrials.map((t) => t.frontal.pFSA_cm2 / t.frontal.athleteHeight_cm).filter(Number.isFinite);
+  const cohortMaxPFSANorm = pfsaNorms.length > 0 ? Math.max(...pfsaNorms) : 0;
   validTrials.forEach((t) => {
     t.aeroScore = computeAeroScore(t, cohortMaxPFSANorm);
   });
