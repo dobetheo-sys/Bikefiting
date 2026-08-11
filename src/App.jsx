@@ -845,6 +845,13 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
   const [dropMm, setDropMm] = useState(initialDeltas?.dropMm !== undefined ? String(initialDeltas.dropMm) : '');
   const [hasAeroBars, setHasAeroBars] = useState(initialDeltas?.hasAeroBars ?? false);
 
+  // Audit fiabilité/ergonomie : le bouton n'était jamais désactivé et Number('') vaut 0, donc un
+  // champ laissé vide (recul de selle mis à part, volontairement optionnel — cf. Trial['deltas']
+  // dans posture-aero-engine.ts) était silencieusement enregistré comme "0mm mesuré" — une
+  // fabrication qui a l'air d'une vraie mesure nulle. Seuls les 3 champs non-optionnels du type
+  // sont requis ici ; recul de selle reste facultatif.
+  const requiredFieldsValid = [saddleHeightMm, reachMm, dropMm].every((v) => v.trim() !== '' && Number.isFinite(Number(v)));
+
   return (
     <ScreenShell
       eyebrow="Réglages du vélo"
@@ -864,7 +871,8 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
                 hasAeroBars,
               })
             }
-            className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200"
+            disabled={!requiredFieldsValid}
+            className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
           >
             Valider ces réglages
           </button>
@@ -886,6 +894,7 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
           value={saddleHeightMm}
           onChange={setSaddleHeightMm}
           suffix="mm"
+          required
           hint="Distance entre l'axe du pédalier et le haut de la selle, le long du tube de selle (valeur mesurée, pas une différence)."
         />
         <NumberField
@@ -900,6 +909,7 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
           value={reachMm}
           onChange={setReachMm}
           suffix="mm"
+          required
           hint="Distance horizontale entre le nez de la selle et le cintre."
         />
         <NumberField
@@ -907,6 +917,7 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
           value={dropMm}
           onChange={setDropMm}
           suffix="mm"
+          required
           hint="Différence de hauteur entre le haut de la selle et le cintre (cintre plus bas = drop plus grand)."
         />
 
@@ -988,7 +999,9 @@ function formatViolation(v) {
     case 'trunk_max':
       return `tronc pas assez couché pour une position aéro (${v.value}° > ${v.bound}° maxi)`;
     case 'knee_range':
-      return `genou hors de la plage validée sur le cycle de pédalage (${v.value}° en moyenne)`;
+      return v.value < v.bound
+        ? `genou trop plié à un moment du cycle de pédalage (${v.value}° < ${v.bound}° mini)`
+        : `genou trop tendu à un moment du cycle de pédalage (${v.value}° > ${v.bound}° maxi)`;
     case 'invalid_measurement':
       return 'mesure invalide (deux points tapés au même endroit) — refais cette étape';
     default:

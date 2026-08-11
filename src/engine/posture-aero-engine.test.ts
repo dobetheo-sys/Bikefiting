@@ -117,6 +117,36 @@ describe('computeAeroScore — garde-fous division par zéro', () => {
   });
 });
 
+describe('validateTrial — knee_range affiche la valeur/le seuil réellement franchi', () => {
+  const profile: AthleteProfile = { hipFlexibilityScore: 3 };
+
+  test('genou trop plié (min < 137) -> value=min, bound=KNEE_MIN (pas la moyenne)', () => {
+    const angles = {
+      hip: { mean: 46, min: 43, max: 49, amplitude: 6, variance: 1 },
+      trunk: { mean: 10, min: 8, max: 12, amplitude: 4, variance: 0.5 },
+      knee: { mean: 143, min: 130, max: 148, amplitude: 18, variance: 0.5 }, // moyenne 143 est dans [137,150], seul min=130 est hors plage
+      ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
+      wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+    };
+    const v = validateTrial(angles, profile);
+    assert.equal(v.violations[0]?.value, 130); // pas 143 (la moyenne, qui est dans la plage)
+    assert.equal(v.violations[0]?.bound, 137);
+  });
+
+  test('genou trop tendu (max > 150) -> value=max, bound=KNEE_MAX', () => {
+    const angles = {
+      hip: { mean: 46, min: 43, max: 49, amplitude: 6, variance: 1 },
+      trunk: { mean: 10, min: 8, max: 12, amplitude: 4, variance: 0.5 },
+      knee: { mean: 143, min: 139, max: 155, amplitude: 16, variance: 0.5 }, // moyenne 143 est dans [137,150], seul max=155 est hors plage
+      ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
+      wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+    };
+    const v = validateTrial(angles, profile);
+    assert.equal(v.violations[0]?.value, 155);
+    assert.equal(v.violations[0]?.bound, 150);
+  });
+});
+
 describe('validateTrial — garde-fou NaN (2 points tapés confondus)', () => {
   const profile: AthleteProfile = { hipFlexibilityScore: 3 };
 

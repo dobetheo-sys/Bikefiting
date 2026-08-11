@@ -798,7 +798,12 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const capturePhoto = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas) return;
+    // Audit fiabilité : garde déjà présente dans captureMeasureFrame mais absente ici — un
+    // shutter déclenché dans l'instant qui suit le montage de la vue caméra live, avant que le
+    // flux ne rapporte ses vraies dimensions, produisait un canvas 0×0. canvas.toBlob() renvoie
+    // alors `null` sur certains navigateurs, et URL.createObjectURL(null) jette une exception
+    // non rattrapée (plus de filet avant l'ErrorBoundary ajouté par ailleurs).
+    if (!video || !canvas || !video.videoWidth) return;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
@@ -873,6 +878,15 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
 
   const pixelLength = taps.length === 2 ? Math.hypot(taps[1].x - taps[0].x, taps[1].y - taps[0].y) : null;
   const cmPerPixel = pixelLength && refLengthCm ? Number(refLengthCm) / pixelLength : null;
+  // Audit fiabilité : computePFSA_cm2 ne rejette qu'une distance <= 0, pas une distance
+  // minuscule (ex. 2 taps à 2px l'un de l'autre pour un vrai repère de 40cm) — le ratio
+  // cm/px, et donc toute la surface frontale calculée ensuite, se retrouve alors faussé de
+  // plusieurs ordres de grandeur, sans aucun avertissement. 20px (en pixels NATURELS de la
+  // photo, indépendant du zoom d'affichage) est un seuil généreux : un repère réel occupe
+  // presque toujours largement plus que ça à l'écran, donc en dessous il s'agit presque
+  // certainement de 2 taps accidentellement rapprochés plutôt que d'un choix délibéré.
+  const MIN_CALIBRATION_PX = 20;
+  const calibrationTooClose = pixelLength !== null && pixelLength < MIN_CALIBRATION_PX;
 
   const finish = () => {
     stopStream();
@@ -1410,8 +1424,12 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             {/* Toujours monté (même famille de bug que les hints d'en-tête) : ce texte
                 n'apparaît qu'une fois les 2 points posés, ce qui ferait sauter visuellement les
                 2 points déjà posés juste au moment où l'utilisateur finit de les placer. */}
-            <div className="text-xs text-neutral-400 min-h-[1em]" style={{ fontFamily: 'ui-monospace, monospace' }}>
-              {pixelLength ? `${pixelLength.toFixed(0)}px mesurés · ${cmPerPixel?.toFixed(3)} cm/px` : ''}
+            <div className={`text-xs min-h-[1em] ${calibrationTooClose ? 'text-red-400' : 'text-neutral-400'}`} style={{ fontFamily: 'ui-monospace, monospace' }}>
+              {calibrationTooClose
+                ? `${pixelLength.toFixed(0)}px mesurés — les 2 points semblent trop proches, écarte-les pour une précision correcte`
+                : pixelLength
+                  ? `${pixelLength.toFixed(0)}px mesurés · ${cmPerPixel?.toFixed(3)} cm/px`
+                  : ''}
             </div>
 
             <div className="flex gap-3">
@@ -1424,7 +1442,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             </div>
             <button
               onClick={finish}
-              disabled={taps.length < 2}
+              disabled={taps.length < 2 || calibrationTooClose}
               className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan-200"
             >
               <Check className="w-4 h-4" /> Valider l'étalonnage

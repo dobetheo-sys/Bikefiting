@@ -173,8 +173,18 @@ export function validateTrial(angles: TrialAngles, profile: AthleteProfile): Val
 
   // Genou : doit rester dans la plage sur tout le cycle (min/max), pas juste en moyenne.
   // Exclusoire en 'aero' ; avertissement en 'comfort' (même raison que le tronc ci-dessus).
+  // Audit fiabilité : `value`/`bound` reflètent maintenant le seuil RÉELLEMENT franchi (min si
+  // trop plié, max si trop tendu) plutôt que systématiquement la moyenne + KNEE_MIN — l'ancien
+  // comportement pouvait afficher une valeur qui a l'air dans la plage (la moyenne) à côté d'un
+  // message "genou hors de la plage", contradiction confuse pour l'utilisateur qui essaie de
+  // comprendre pourquoi son essai a été exclu.
   if (angles.knee.min < KNEE_MIN || angles.knee.max > KNEE_MAX) {
-    const entry: Violation = { param: 'knee_range', value: angles.knee.mean, bound: KNEE_MIN };
+    const tooFlexed = angles.knee.min < KNEE_MIN;
+    const entry: Violation = {
+      param: 'knee_range',
+      value: tooFlexed ? angles.knee.min : angles.knee.max,
+      bound: tooFlexed ? KNEE_MIN : KNEE_MAX,
+    };
     (goal === 'aero' ? violations : warnings).push(entry);
   }
   margins.knee_deg = round1(Math.min(angles.knee.min - KNEE_MIN, KNEE_MAX - angles.knee.max));
