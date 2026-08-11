@@ -333,8 +333,21 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
   // voisin le plus proche vu la densité de points sur certaines images (ex. 3 points PMH proches).
   const HIT_RADIUS_PX = 22;
 
+  // Retour terrain : "il y a des bugs où le point est placé loin du click original" — en
+  // pratique, un tap destiné à poser le POINT SUIVANT (ex. "genou") qui tombait par hasard à
+  // moins de 22px d'un point déjà posé (ex. "hanche") était silencieusement interprété comme un
+  // glisser-corriger de ce point déjà posé, sans aucun retour visuel distinct : le compteur de
+  // points n'avançait pas, mais rien ne le signalait — l'utilisateur croyait avoir posé 2 points
+  // alors qu'un seul existait (déplacé), et tous les points suivants se retrouvaient décalés
+  // d'un cran (le "genou" tapé ensuite devenait en réalité le point "hanche", etc.), aboutissant
+  // à des repères mal étiquetés sans erreur visible — exactement ce qui peut ressembler après
+  // coup à "le point est loin d'où j'ai cliqué". Le glisser-pour-corriger ne s'active donc plus
+  // que lorsque TOUS les points de l'étape sont déjà posés (points.length >= maxPoints) : pendant
+  // la pose initiale, un tap est toujours un nouveau point, sans ambiguïté possible ; une fois
+  // l'étape complète, un tap sert forcément à corriger (retour terrain d'origine sur la
+  // correction ciblée, qui reste pleinement disponible une fois la pose terminée).
   const hitTestPoint = (screenX, screenY) => {
-    if (!size || !onMovePoint) return null;
+    if (!size || !onMovePoint || points.length < maxPoints) return null;
     const rect = imgRef.current.getBoundingClientRect();
     let closestIndex = null;
     let closestDist = HIT_RADIUS_PX;
@@ -1228,8 +1241,9 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
 
       {screen === 'measure' && currentMeasureStep && (
         <div className="flex-1 flex flex-col">
-          {/* Retour terrain : "bug d'affichage quand l'image est choisie" — le texte
-              "glisse un point déjà posé..." n'apparaît qu'au 1er point posé, ce qui change la
+          {/* Retour terrain : "bug d'affichage quand l'image est choisie" — un texte qui
+              n'apparaît que conditionnellement (ex. "glisse un point déjà posé...", visible
+              seulement une fois tous les points de l'étape posés, cf. hitTestPoint) change la
               hauteur de cet en-tête et donc l'espace dispo pour l'image en dessous (flex-1) :
               l'image entière (et tous les points déjà posés) se redimensionnaient et
               sautaient visuellement sous les yeux de l'utilisateur en train de viser le point
@@ -1245,7 +1259,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             <p className="text-xs text-neutral-500 mt-1">
               {measurePoints.length}/{measureMaxPoints} points placés
               {currentMeasureStep.pointLabels[measurePoints.length] ? ` · prochain : ${currentMeasureStep.pointLabels[measurePoints.length]}` : ''}
-              <span className={measurePoints.length > 0 ? '' : 'invisible'}> · glisse un point déjà posé pour le corriger</span>
+              <span className={measurePoints.length >= measureMaxPoints ? '' : 'invisible'}> · glisse un point déjà posé pour le corriger</span>
             </p>
             <p className="text-xs text-cyan-300 mt-1.5 leading-relaxed min-h-[2.5em]">
               {currentMeasureStep.pointHints?.[measurePoints.length] ?? ''}
@@ -1342,7 +1356,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               Touche 2 points correspondant à une longueur connue (ex. les deux extrémités du cintre).
             </p>
             <p className="text-xs text-neutral-500 mt-1">
-              {taps.length}/2 points placés<span className={taps.length > 0 ? '' : 'invisible'}> · glisse un point déjà posé pour le corriger</span>
+              {taps.length}/2 points placés<span className={taps.length >= 2 ? '' : 'invisible'}> · glisse un point déjà posé pour le corriger</span>
             </p>
           </div>
 
