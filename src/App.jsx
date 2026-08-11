@@ -16,9 +16,9 @@ import {
   Camera,
   ChevronRight,
   Circle,
-  Lock,
 } from 'lucide-react';
 import PostureCaptureFlow from './components/PostureCaptureFlow.jsx';
+import PrivacyNote from './components/PrivacyNote.jsx';
 import { getVisionFileset } from './capture/mediapipe-vision';
 import { createBikeFitSegmenter, toBikeFitBinaryMask } from './capture/segmentation-integration';
 import { computePFSA_cm2, KNEE_STRAIGHT_THRESHOLD } from './capture/capture-processing';
@@ -142,15 +142,6 @@ function ProgressBar({ value, max }) {
   );
 }
 
-function PrivacyNote({ className = '' }) {
-  return (
-    <div className={`flex items-start gap-2 text-xs text-neutral-500 ${className}`}>
-      <Lock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-      <span>Traité entièrement sur ton téléphone — aucune vidéo ni photo n’est envoyée en ligne.</span>
-    </div>
-  );
-}
-
 // Écrans "formulaire/liste" (profil, session, essai, réglages, résultats) : contenu
 // potentiellement plus long qu'un écran (liste d'essais qui grandit, checklist d'un
 // essai) — même pattern que WelcomeScreen (h-screen + zone scrollable + CTA ancré en
@@ -200,7 +191,7 @@ function StepCard({ icon: Icon, step, title, duration, children, accent }) {
         </div>
         <p className="text-sm text-neutral-400 leading-relaxed">{children}</p>
         {duration && (
-          <div className="flex items-center gap-1.5 mt-2 text-xs text-neutral-600" style={{ fontFamily: 'ui-monospace, monospace' }}>
+          <div className="flex items-center gap-1.5 mt-2 text-xs text-neutral-400" style={{ fontFamily: 'ui-monospace, monospace' }}>
             <Timer className="w-3 h-3" /> {duration}
           </div>
         )}
@@ -475,7 +466,7 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
           </button>
           <button
             onClick={() => { if (confirm('Effacer cette session et repartir de zéro ?')) onNewSession(); }}
-            className="w-full text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+            className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
           >
             Nouvelle session (efface tout)
           </button>
@@ -487,7 +478,7 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
       </p>
 
       {trials.length === 0 && referenceSaddleHeightCm && (
-        <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-4">
+        <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-6">
           <div className="text-xs tracking-widest text-cyan-300 uppercase mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
             Avant ton premier essai
           </div>
@@ -546,7 +537,7 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
         </div>
       )}
 
-      <p className="text-neutral-600 text-xs mb-6">
+      <p className="text-neutral-400 text-xs mb-6">
         Reprend automatiquement ici si tu quittes ou si le navigateur plante.
       </p>
     </ScreenShell>
@@ -584,7 +575,7 @@ function TrialStepRow({ icon: Icon, title, consigne, done, summary, onClick }) {
         <div className="font-medium text-neutral-100 text-sm">{title}</div>
         <p className="text-xs text-neutral-500 mt-0.5 truncate">{done ? summary : consigne}</p>
       </div>
-      <ChevronRight className="w-4 h-4 text-neutral-600 shrink-0" />
+      <ChevronRight className="w-4 h-4 text-neutral-400 shrink-0" />
     </button>
   );
 }
@@ -1048,9 +1039,13 @@ function ResultsScreen({ result, onBack }) {
             </h1>
             {result.profiles ? (
               <div className="space-y-3 my-6">
-                <ProfileCard title="Confort max" accent="text-cyan-400" profile={result.profiles.confort_max} />
-                <ProfileCard title="Équilibré" accent="text-amber-400" profile={result.profiles.equilibre} />
-                <ProfileCard title="Aéro max" accent="text-pink-400" profile={result.profiles.aero_max} />
+                {/* Audit visuel : convention couleur de l'appli — ambre = selle/confort,
+                    cyan = cintre/aéro (cf. TapImage, ASLR...). Ces 3 cartes utilisaient un
+                    mappage sans rapport (confort en cyan, aéro en rose) qui contredisait cette
+                    convention partout ailleurs dans l'app. */}
+                <ProfileCard title="Confort max" accent="text-amber-400" profile={result.profiles.confort_max} />
+                <ProfileCard title="Équilibré" accent="text-pink-400" profile={result.profiles.equilibre} />
+                <ProfileCard title="Aéro max" accent="text-cyan-400" profile={result.profiles.aero_max} />
               </div>
             ) : (
               <p className="text-neutral-400 text-sm my-6">Aucun front Pareto disponible.</p>

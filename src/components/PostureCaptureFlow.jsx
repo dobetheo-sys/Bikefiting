@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Video, Camera, Square, RotateCcw, Undo2, Check, AlertTriangle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Crosshair, Upload, Lock } from 'lucide-react';
+import { Video, Camera, Square, RotateCcw, Undo2, Check, AlertTriangle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Crosshair, Upload } from 'lucide-react';
+import PrivacyNote from './PrivacyNote.jsx';
 import {
   computeManualAslrAngle,
   computeManualTrialPmh,
@@ -168,23 +169,18 @@ function formatElapsed(ms) {
   return `${String(s).padStart(2, '0')}.${cs}s`;
 }
 
-function PrivacyNote({ className = '' }) {
-  return (
-    <div className={`flex items-center gap-1.5 text-[11px] text-neutral-600 ${className}`}>
-      <Lock className="w-3 h-3 shrink-0" />
-      <span>Traité sur ton téléphone, rien n'est envoyé en ligne</span>
-    </div>
-  );
-}
-
 function ChecklistPanel({ mode, open, onToggle }) {
   return (
     <div className="bg-neutral-900 border-t border-neutral-800">
-      <button onClick={onToggle} className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-neutral-400 focus:outline-none">
+      {/* Audit accessibilité : seul élément interactif de l'appli sans focus:ring (juste
+          focus:outline-none, sans remplacement — invisible au clavier/accès-switch). Le
+          chevron était aussi inversé (bas quand ouvert, haut quand fermé) — convention
+          habituelle : bas = "développer" (fermé), haut = "réduire" (ouvert). */}
+      <button onClick={onToggle} className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-neutral-400 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
         <span className="tracking-wide uppercase" style={{ fontFamily: 'ui-monospace, monospace' }}>
           Checklist · {MODES[mode].label}
         </span>
-        {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+        {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
       </button>
       {open && (
         <ul className="px-4 pb-3 space-y-1.5">
@@ -1059,7 +1055,10 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
         <div className="flex-1 relative flex flex-col">
           {error ? (
             <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-              <AlertTriangle className="w-8 h-8 text-red-400 mb-3" />
+              {/* Audit cohérence visuelle : text-red-400 ici vs text-amber-400 partout ailleurs
+                  pour la même icône "erreur" (App.jsx ErrorScreen, ErrorBoundary) — même
+                  signification, deux couleurs différentes selon le fichier. */}
+              <AlertTriangle className="w-8 h-8 text-amber-400 mb-3" />
               <p className="text-neutral-200 text-sm max-w-xs">{error}</p>
               <button onClick={startOver} className="mt-6 text-sm text-amber-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
                 Retour
@@ -1109,7 +1108,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 {onCancel && (
                   <button
                     onClick={onCancel}
-                    className="text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+                    className="text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
                   >
                     Annuler
                   </button>
@@ -1191,7 +1190,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 {onCancel && !recording && (
                   <button
                     onClick={onCancel}
-                    className="text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+                    className="text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
                   >
                     Annuler
                   </button>
@@ -1204,7 +1203,12 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
       )}
 
       {screen === 'review' && (
-        <div className="flex-1 flex flex-col">
+        // Audit ergonomie : pas de secours scroll sur cet écran, contrairement à ScreenShell —
+        // avec un en-tête + curseur de défilement fin + pied de page tous à hauteur fixe, un
+        // viewport court en paysage (l'ASLR demande explicitement de filmer en paysage) peut
+        // laisser trop peu de place à la vidéo elle-même, ou pousser les boutons hors champ
+        // sans aucun moyen d'y accéder. min-h sur la zone vidéo + overflow-y-auto en secours.
+        <div className="flex-1 flex flex-col overflow-y-auto">
           {currentMeasureStep && (
             <div className="px-6 py-3 bg-neutral-900 border-b border-neutral-800">
               {manualSteps.length > 1 && (
@@ -1215,7 +1219,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               <p className="text-sm text-neutral-200">{currentMeasureStep.frameInstruction}</p>
             </div>
           )}
-          <div className="flex-1 bg-black flex items-center justify-center">
+          <div className="flex-1 min-h-[220px] bg-black flex items-center justify-center">
             <video
               ref={reviewVideoRef}
               src={capturedUrl}
@@ -1284,7 +1288,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 (qui relance une capture, pas un abandon) était proposé. Un utilisateur qui vient
                 de filmer/importer et veut simplement abandonner cette étape était bloqué. */}
             {onCancel && (
-              <button onClick={handleCancelMeasure} className="w-full text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
+              <button onClick={handleCancelMeasure} className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
                 Annuler
               </button>
             )}
@@ -1293,7 +1297,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
       )}
 
       {screen === 'measure' && currentMeasureStep && (
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col overflow-y-auto">
           {/* Retour terrain : "bug d'affichage quand l'image est choisie" — un texte qui
               n'apparaît que conditionnellement (ex. "glisse un point déjà posé...", visible
               seulement une fois tous les points de l'étape posés, cf. hitTestPoint) change la
@@ -1319,7 +1323,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             </p>
           </div>
 
-          <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+          <div className="flex-1 min-h-[220px] relative bg-black flex items-center justify-center overflow-hidden">
             <TapImage
               src={measureStillUrl}
               alt="Image choisie pour la mesure"
@@ -1338,7 +1342,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 dernier point posé, agrandit le pied de page, et fait sauter visuellement l'image
                 (et tous les points déjà posés) juste au-dessus. Même famille de bug que le hint
                 d'en-tête plus haut. */}
-            <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 space-y-1 min-h-[4.5rem]">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3 space-y-1 min-h-[4.5rem]">
               {measureResultInvalid && (
                 <p className="text-xs text-red-400 leading-relaxed">
                   Deux points tapés sont au même endroit (ou presque) — le calcul d'angle n'est pas possible. Glisse-les pour les écarter, ou recommence.
@@ -1396,7 +1400,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               <Check className="w-4 h-4" /> {measureStepIndex + 1 < manualSteps.length ? 'Valider et passer à l’étape suivante' : 'Valider la mesure'}
             </button>
             {onCancel && (
-              <button onClick={handleCancelMeasure} className="w-full text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
+              <button onClick={handleCancelMeasure} className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
                 Annuler
               </button>
             )}
@@ -1405,7 +1409,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
       )}
 
       {screen === 'calibrate' && (
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col overflow-y-auto">
           {/* Cf. commentaire équivalent sur l'écran 'measure' : le hint ne doit jamais changer
               la hauteur de cet en-tête, sinon l'image (et les points déjà posés) se
               redimensionnent et sautent visuellement au 1er point posé. */}
@@ -1418,7 +1422,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             </p>
           </div>
 
-          <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+          <div className="flex-1 min-h-[220px] relative bg-black flex items-center justify-center overflow-hidden">
             <TapImage
               src={capturedUrl}
               alt="Photo frontale capturée"
@@ -1470,7 +1474,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             {/* Audit ergonomie : cet écran ('calibrate') n'avait aucune sortie non plus — cf.
                 le même correctif sur l'écran 'review'. */}
             {onCancel && (
-              <button onClick={onCancel} className="w-full text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
+              <button onClick={onCancel} className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
                 Annuler
               </button>
             )}
