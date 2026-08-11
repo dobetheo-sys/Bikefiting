@@ -478,32 +478,45 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
             le point lui-même (pas juste l'étiquette) du vrai point tapé, d'une distance
             proportionnelle à la largeur du texte du label. Le point reste seul responsable de
             représenter la coordonnée exacte ; l'étiquette est juste décalée à côté par un
-            offset fixe en pixels, sans influencer la position du point. */}
+            offset fixe en pixels, sans influencer la position du point.
+            Retour terrain suivant : "certain point me semble encore trop gros pour être bien
+            placé" — le point est un enfant du calque zoomé (scale(zoom)), donc sa taille visuelle
+            grossit AVEC le zoom (un point de 12px devient 36px à 300%), ce qui masque justement
+            la zone qu'on essaie de voir précisément en zoomant. Un 2e niveau imbriqué applique
+            scale(1/zoom) pour annuler l'effet du zoom sur SA propre taille : le point reste à une
+            taille constante à l'écran quel que soit le niveau de zoom (comme un pin sur une carte
+            qui ne grossit pas avec elle). Le conteneur externe (translate(-50%,-50%) sur left/top%)
+            garde la responsabilité du centrage exact ; il n'est lui-même jamais mis à l'échelle,
+            donc son calcul de centrage n'est pas affecté par le zoom. */}
         {size && points.map((p, i) => (
-          <div key={i} className="pointer-events-none">
+          <div
+            key={i}
+            className="absolute pointer-events-none"
+            style={{ left: `${(p.x / size.width) * 100}%`, top: `${(p.y / size.height) * 100}%`, transform: 'translate(-50%,-50%)' }}
+          >
             <div
-              className="absolute rounded-full border-2 border-neutral-950"
+              className="rounded-full border-2 border-neutral-950"
               style={{
-                left: `${(p.x / size.width) * 100}%`,
-                top: `${(p.y / size.height) * 100}%`,
                 width: i === dragIndex ? 16 : 12,
                 height: i === dragIndex ? 16 : 12,
                 background: color,
                 boxShadow: onMovePoint ? '0 0 0 6px rgba(255,255,255,0.08)' : 'none',
-                transform: 'translate(-50%,-50%)',
+                transform: `scale(${1 / zoom})`,
               }}
             />
             {pointLabels?.[i] && (
-              <span
-                className="absolute px-1 rounded bg-black/50 text-[8px] leading-tight whitespace-nowrap"
-                style={{
-                  left: `${(p.x / size.width) * 100}%`,
-                  top: `${(p.y / size.height) * 100}%`,
-                  transform: 'translate(10px, -50%)',
-                  color,
-                }}
-              >
-                {pointLabels[i]}
+              // Même principe à double calque que le point : le span externe ancre la position
+              // (left-1/2 top-1/2 + translate(0,-50%), sur SA propre taille non affectée par un
+              // zoom qu'elle ne subit pas) ; le span interne applique scale(1/zoom) autour de son
+              // bord gauche (transformOrigin) pour rester à taille d'écran constante sans faire
+              // dériver le point d'ancrage.
+              <span className="absolute left-1/2 top-1/2 pointer-events-none" style={{ transform: 'translate(0, -50%)' }}>
+                <span
+                  className="block px-1 rounded bg-black/50 text-[8px] leading-tight whitespace-nowrap"
+                  style={{ color, transform: `scale(${1 / zoom})`, transformOrigin: 'left center', marginLeft: 4 }}
+                >
+                  {pointLabels[i]}
+                </span>
               </span>
             )}
           </div>
