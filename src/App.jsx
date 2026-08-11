@@ -16,6 +16,7 @@ import {
   Camera,
   ChevronRight,
   Circle,
+  History,
 } from 'lucide-react';
 import PostureCaptureFlow from './components/PostureCaptureFlow.jsx';
 import PrivacyNote from './components/PrivacyNote.jsx';
@@ -57,6 +58,26 @@ function loadPersistedSession() {
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
+  }
+}
+
+// Historique (amélioration §3, prépare §1 boucle de feedback et §4 tendance) : jusqu'ici
+// "Nouvelle session" effaçait purement et simplement les essais/résultats — impossible de
+// comparer un bilan à un précédent, ou de rebrancher un feedback post-sortie sur un réglage
+// déjà testé. Une session avec au moins un essai est maintenant archivée avant d'être remise
+// à zéro (cf. archiveCurrentSession dans App()), dans une clé localStorage séparée pour ne
+// jamais interférer avec la reprise de session en cours (SESSION_STORAGE_KEY) ni avec le
+// nettoyage de secours de l'ErrorBoundary, qui ne doit toucher que la session cassée, pas
+// l'historique déjà validé.
+export const SESSION_HISTORY_KEY = 'posture-aero-history-v1';
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(SESSION_HISTORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
 }
 
@@ -212,7 +233,7 @@ function GearItem({ icon: Icon, title, children }) {
   );
 }
 
-function WelcomeScreen({ onStart }) {
+function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
   // h-screen (pas min-h-screen comme Shell) : contenu plus long qu'un écran, le bouton
   // "Commencer" doit rester ancré en bas et visible sans avoir à tout faire défiler
   // d'abord — Shell est partagé par des écrans qui, eux, comptent sur min-h-screen.
@@ -289,13 +310,21 @@ function WelcomeScreen({ onStart }) {
       </div>
 
       <div className="px-6 py-5 border-t border-neutral-800 bg-neutral-950">
-        <div className="max-w-md mx-auto w-full">
+        <div className="max-w-md mx-auto w-full space-y-3">
           <button
             onClick={onStart}
             className="w-full py-3.5 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200 flex items-center justify-center gap-2"
           >
             Commencer le bilan <ArrowRight className="w-4 h-4" />
           </button>
+          {historyCount > 0 && (
+            <button
+              onClick={onViewHistory}
+              className="w-full flex items-center justify-center gap-2 py-2 text-sm text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+            >
+              <History className="w-3.5 h-3.5" /> Voir {historyCount > 1 ? `mes ${historyCount} bilans précédents` : 'mon bilan précédent'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -465,10 +494,20 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
             Voir les résultats
           </button>
           <button
-            onClick={() => { if (confirm('Effacer cette session et repartir de zéro ?')) onNewSession(); }}
+            onClick={() => {
+              // Historique (§3 amélioration) : une session avec au moins un essai est maintenant
+              // archivée avant d'être remise à zéro (cf. archiveCurrentSession dans App()), donc
+              // "efface tout" n'est plus exact dès qu'il y a quelque chose à garder — le message
+              // de confirmation reflète ce qui va réellement se passer.
+              const msg =
+                trials.length > 0
+                  ? 'Nouvelle session ? Ce bilan sera archivé dans ton historique avant de repartir de zéro.'
+                  : 'Nouvelle session et repartir de zéro ?';
+              if (confirm(msg)) onNewSession();
+            }}
             className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
           >
-            Nouvelle session (efface tout)
+            Nouvelle session
           </button>
         </>
       }
@@ -1013,14 +1052,75 @@ function ExcludedTrialsList({ excludedTrials }) {
   );
 }
 
-function ResultsScreen({ result, onBack }) {
+// Historique : cf. commentaire sur SESSION_HISTORY_KEY dans App.jsx.
+function formatSessionDate(iso) {
+  try {
+    return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  } catch {
+    return iso;
+  }
+}
+
+function HistoryCard({ entry, onOpen, onDelete }) {
+  const nbTrials = entry.trials?.length ?? 0;
+  return (
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+      <button
+        onClick={() => onOpen(entry)}
+        className="w-full text-left focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+      >
+        <div className="text-sm text-neutral-100 font-medium">{formatSessionDate(entry.archivedAt)}</div>
+        <div className="text-xs text-neutral-500 mt-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+          {nbTrials} essai{nbTrials > 1 ? 's' : ''} · objectif {entry.profile?.goal === 'comfort' ? 'confort' : 'aéro'} · souplesse{' '}
+          {entry.profile?.hipFlexibilityScore ?? '?'}/5
+        </div>
+      </button>
+      <button
+        onClick={() => { if (confirm('Supprimer ce bilan de l’historique ?')) onDelete(entry.id); }}
+        className="mt-2 text-xs text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+      >
+        Supprimer
+      </button>
+    </div>
+  );
+}
+
+function HistoryScreen({ history, onOpen, onDelete, onBack }) {
+  // Le plus récent en premier — spread avant reverse() : reverse() mute en place, et `history`
+  // est le state React de App(), le muter directement casserait la détection de changement.
+  const sorted = [...history].reverse();
+  return (
+    <ScreenShell
+      eyebrow="Historique"
+      eyebrowColor="text-cyan-400"
+      title="Tes bilans précédents"
+      footer={
+        <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+          Retour
+        </button>
+      }
+    >
+      {sorted.length === 0 ? (
+        <p className="text-neutral-400 text-sm my-6">Aucun bilan archivé pour l'instant.</p>
+      ) : (
+        <div className="space-y-3 my-4">
+          {sorted.map((entry) => (
+            <HistoryCard key={entry.id} entry={entry} onOpen={onOpen} onDelete={onDelete} />
+          ))}
+        </div>
+      )}
+    </ScreenShell>
+  );
+}
+
+function ResultsScreen({ result, onBack, backLabel = 'Retour à la session' }) {
   return (
     <ScreenShell
       eyebrow="Résultats"
       eyebrowColor="text-cyan-400"
       footer={
         <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
-          Retour à la session
+          {backLabel}
         </button>
       }
     >
@@ -1073,6 +1173,11 @@ export default function App() {
   const [busyProgress, setBusyProgress] = useState(null);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  // Historique : cf. commentaire sur SESSION_HISTORY_KEY. 'session' | 'history' — pour que le
+  // bouton Retour de ResultsScreen ramène au bon endroit selon qu'on regarde le résultat de la
+  // session en cours ou celui d'un bilan archivé.
+  const [history, setHistory] = useState(() => loadHistory());
+  const [resultsOrigin, setResultsOrigin] = useState('session');
 
   useEffect(() => {
     try {
@@ -1082,6 +1187,14 @@ export default function App() {
     }
   }, [aslrAngle, profile, athleteHeightCm, athleteInseamCm, trials]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(history));
+    } catch {
+      // stockage indisponible — pas bloquant, l'historique reste juste non persistant pour cette session navigateur
+    }
+  }, [history]);
+
   // Audit fiabilité : photoReviewUrl (URL.createObjectURL) est recréée à chaque photo frontale
   // analysée avec succès, y compris en refaisant l'étape (redoTrialPhoto) — jamais révoquée.
   // Cf. le même correctif dans PostureCaptureFlow.jsx : la révocation suit l'état plutôt que
@@ -1089,6 +1202,15 @@ export default function App() {
   useEffect(() => () => { if (pendingTrial?.photoReviewUrl) URL.revokeObjectURL(pendingTrial.photoReviewUrl); }, [pendingTrial?.photoReviewUrl]);
 
   const startNewSession = useCallback(() => {
+    // Archive avant de tout effacer, cf. commentaire sur SESSION_HISTORY_KEY. Un profil sans
+    // aucun essai (ASLR + taille remplis puis abandon) n'a rien d'utile à revisiter plus tard,
+    // donc pas archivé — seule une session avec au moins un essai l'est.
+    if (trials.length > 0) {
+      setHistory((prev) => [
+        ...prev,
+        { id: `s${Date.now()}`, archivedAt: new Date().toISOString(), aslrAngle, profile, athleteHeightCm, athleteInseamCm, trials },
+      ]);
+    }
     try {
       localStorage.removeItem(SESSION_STORAGE_KEY);
     } catch {
@@ -1104,7 +1226,7 @@ export default function App() {
     setResult(null);
     setError(null);
     setStage('welcome');
-  }, []);
+  }, [trials, aslrAngle, profile, athleteHeightCm, athleteInseamCm]);
 
   const fail = useCallback((e) => {
     const message =
@@ -1253,8 +1375,23 @@ export default function App() {
 
   const runAnalysis = useCallback(() => {
     setResult(runEngine(trials, profile, NEUTRAL_WEIGHTS));
+    setResultsOrigin('session');
     setStage('results');
   }, [trials, profile]);
+
+  // Historique : runEngine est une fonction pure (trials/profile/weights -> résultat), donc pas
+  // besoin de persister le résultat calculé d'un bilan archivé — on le recalcule à la demande,
+  // exactement comme pour la session en cours (runAnalysis ci-dessus). Ça évite aussi qu'un
+  // résultat archivé devienne incohérent si la logique de scoring évolue plus tard.
+  const viewHistoryEntry = useCallback((entry) => {
+    setResult(runEngine(entry.trials, entry.profile, NEUTRAL_WEIGHTS));
+    setResultsOrigin('history');
+    setStage('results');
+  }, []);
+
+  const deleteHistoryEntry = useCallback((id) => {
+    setHistory((prev) => prev.filter((entry) => entry.id !== id));
+  }, []);
 
   const retryFromError = useCallback(() => {
     setError(null);
@@ -1269,7 +1406,22 @@ export default function App() {
 
   switch (stage) {
     case 'welcome':
-      return <WelcomeScreen onStart={() => setStage('aslr-capture')} />;
+      return (
+        <WelcomeScreen
+          onStart={() => setStage('aslr-capture')}
+          historyCount={history.length}
+          onViewHistory={() => setStage('history')}
+        />
+      );
+    case 'history':
+      return (
+        <HistoryScreen
+          history={history}
+          onOpen={viewHistoryEntry}
+          onDelete={deleteHistoryEntry}
+          onBack={() => setStage(profile ? 'session' : 'welcome')}
+        />
+      );
     case 'aslr-capture':
       return <PostureCaptureFlow key="aslr" initialMode="aslr_test" onCaptured={handleAslrCaptured} onCancel={cancelAslrCapture} />;
     case 'profile-form':
@@ -1316,7 +1468,11 @@ export default function App() {
     case 'trial-deltas':
       return <TrialDeltasForm initialDeltas={pendingTrial?.deltas} onSubmit={handleTrialDeltasSubmit} onCancel={cancelTrialStep} />;
     case 'results':
-      return <ResultsScreen result={result} onBack={() => setStage('session')} />;
+      return resultsOrigin === 'history' ? (
+        <ResultsScreen result={result} onBack={() => setStage('history')} backLabel="Retour à l'historique" />
+      ) : (
+        <ResultsScreen result={result} onBack={() => setStage('session')} />
+      );
     case 'session':
     default:
       return (
