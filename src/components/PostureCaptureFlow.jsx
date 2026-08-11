@@ -632,7 +632,15 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const manualSteps = MANUAL_MEASURE_STEPS[mode] ?? [];
   const currentMeasureStep = manualSteps[measureStepIndex] ?? null;
   const measureMaxPoints = currentMeasureStep?.pointLabels.length ?? 0;
-  const measureResult = currentMeasureStep && measurePoints.length === measureMaxPoints ? currentMeasureStep.compute(measurePoints) : null;
+  const rawMeasureResult = currentMeasureStep && measurePoints.length === measureMaxPoints ? currentMeasureStep.compute(measurePoints) : null;
+  // angleAt()/angleVsHorizontal() (capture-processing.ts) retournent NaN quand 2 points tapés
+  // coïncident (vecteur de longueur nulle) — un objet avec des champs NaN reste "truthy" et
+  // passait auparavant le garde-fou `!measureResult`, laissant un essai corrompu (angle affiché
+  // "NaN°") continuer jusqu'au moteur de scoring, dont TOUTES les comparaisons numériques (<, >)
+  // valent silencieusement false pour NaN — un tel essai n'était jamais exclu par validateTrial
+  // ni dominé dans paretoFront, et pouvait ressortir comme une des 3 positions recommandées.
+  const measureResultInvalid = rawMeasureResult != null && Object.values(rawMeasureResult).some((v) => typeof v === 'number' && !Number.isFinite(v));
+  const measureResult = measureResultInvalid ? null : rawMeasureResult;
 
   const releaseWakeLock = useCallback(() => {
     wakeLockRef.current?.release().catch(() => {});
@@ -657,6 +665,17 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   }, [releaseWakeLock]);
 
   useEffect(() => () => { stopStream(); clearInterval(timerRef.current); }, [stopStream]);
+
+  // Audit fiabilité : URL.createObjectURL(blob) est appelé à chaque nouvelle capture/import
+  // (photo, vidéo, image de mesure choisie) sans jamais révoquer l'URL précédente — sur un
+  // usage réel (plusieurs essais, quelques reprises), ça peut accumuler des dizaines de Mo de
+  // mémoire morte et risquer un crash d'onglet sur téléphone. Ce nettoyage suit l'état plutôt
+  // que chaque site d'appel individuel : dès que `capturedUrl`/`measureStillUrl` change (donc
+  // aussi au démontage), l'ANCIENNE valeur est révoquée — couvre uniformément retake/startOver/
+  // capturePhoto/importPhoto/importVideo/startRecording/captureMeasureFrame sans dupliquer la
+  // logique de révocation à chaque site.
+  useEffect(() => () => { if (capturedUrl) URL.revokeObjectURL(capturedUrl); }, [capturedUrl]);
+  useEffect(() => () => { if (measureStillUrl) URL.revokeObjectURL(measureStillUrl); }, [measureStillUrl]);
 
   useEffect(() => {
     try {
@@ -1286,11 +1305,16 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 (et tous les points déjà posés) juste au-dessus. Même famille de bug que le hint
                 d'en-tête plus haut. */}
             <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 space-y-1 min-h-[4.5rem]">
+              {measureResultInvalid && (
+                <p className="text-xs text-red-400 leading-relaxed">
+                  Deux points tapés sont au même endroit (ou presque) — le calcul d'angle n'est pas possible. Glisse-les pour les écarter, ou recommence.
+                </p>
+              )}
               {measureResult && (
                 <>
                 {currentMeasureStep.key === 'raise' && (
                   <>
-                    <div className="text-2xl font-semibold text-cyan-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                    <div className="text-2xl font-semibold text-amber-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
                       {measureResult.angle}°
                     </div>
                     <p className="text-xs text-neutral-500">

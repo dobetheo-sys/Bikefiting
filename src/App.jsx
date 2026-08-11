@@ -49,7 +49,7 @@ const NEUTRAL_WEIGHTS = { neck: 1, lowerBack: 1, hands: 1, knees: 1 };
 // faisait tout perdre, tout vivait en state React). On ne sauvegarde que les données
 // "acquises" (souplesse, profil, essais déjà validés) — pas les étapes de capture en
 // cours (pendingTrial), qui redémarrent proprement depuis leur écran au rechargement.
-const SESSION_STORAGE_KEY = 'posture-aero-session-v1';
+export const SESSION_STORAGE_KEY = 'posture-aero-session-v1';
 
 function loadPersistedSession() {
   try {
@@ -989,6 +989,8 @@ function formatViolation(v) {
       return `tronc pas assez couché pour une position aéro (${v.value}° > ${v.bound}° maxi)`;
     case 'knee_range':
       return `genou hors de la plage validée sur le cycle de pédalage (${v.value}° en moyenne)`;
+    case 'invalid_measurement':
+      return 'mesure invalide (deux points tapés au même endroit) — refais cette étape';
     default:
       return `${v.param} (${v.value})`;
   }
@@ -1071,6 +1073,12 @@ export default function App() {
       // stockage indisponible (navigation privée, quota) — pas bloquant, juste pas de reprise possible
     }
   }, [aslrAngle, profile, athleteHeightCm, athleteInseamCm, trials]);
+
+  // Audit fiabilité : photoReviewUrl (URL.createObjectURL) est recréée à chaque photo frontale
+  // analysée avec succès, y compris en refaisant l'étape (redoTrialPhoto) — jamais révoquée.
+  // Cf. le même correctif dans PostureCaptureFlow.jsx : la révocation suit l'état plutôt que
+  // chaque site d'appel, donc couvre uniformément "refaire la photo" / "nouvel essai" / démontage.
+  useEffect(() => () => { if (pendingTrial?.photoReviewUrl) URL.revokeObjectURL(pendingTrial.photoReviewUrl); }, [pendingTrial?.photoReviewUrl]);
 
   const startNewSession = useCallback(() => {
     try {
