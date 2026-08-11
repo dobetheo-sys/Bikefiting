@@ -23,7 +23,7 @@ import PrivacyNote from './components/PrivacyNote.jsx';
 import { getVisionFileset } from './capture/mediapipe-vision';
 import { createBikeFitSegmenter, toBikeFitBinaryMask } from './capture/segmentation-integration';
 import { computePFSA_cm2, KNEE_STRAIGHT_THRESHOLD } from './capture/capture-processing';
-import { aslrToFlexScore, computeReferenceSaddleHeightCm, suggestNextAdjustment, runEngine } from './engine/posture-aero-engine';
+import { aslrToFlexScore, computeReferenceSaddleHeightCm, suggestNextAdjustment, runEngine, recalibrateWeights } from './engine/posture-aero-engine';
 
 // App.jsx — orchestre toute la session : test de souplesse (ASLR) -> profil athlète ->
 // essais (vidéo profil + photo frontale + deltas matériel) -> runEngine (validation,
@@ -40,9 +40,13 @@ import { aslrToFlexScore, computeReferenceSaddleHeightCm, suggestNextAdjustment,
 // PostureCaptureFlow.jsx pour l'historique des échecs de détection automatique qui ont motivé
 // ce choix (retours terrain 08-11/08/2026).
 //
-// subjective_multiplier (§7, boucle de feedback) : pas de questionnaire post-sortie ici,
-// on reste sur les poids neutres (1.0 partout) — recalibrateWeights() existe et est testé
-// dans le moteur mais brancher une vraie boucle de feedback est hors scope de cette étape.
+// subjective_multiplier (§7, boucle de feedback) : un retour post-sortie (douleur nuque/bas du
+// dos/mains/genoux, 1-5) peut être ajouté depuis l'écran Historique sur un bilan archivé — cf.
+// SUBJECTIVE_STATE_KEY et submitFeedback() dans App(). recalibrateWeights() (moteur) n'augmente
+// un poids que si 2 sorties CONSÉCUTIVES signalent la même zone (évite l'overfit à un mauvais
+// jour, cf. son test). Les poids recalibrés servent au score confort du bilan SUIVANT (session
+// en cours et relecture d'un bilan archivé, cf. runAnalysis/viewHistoryEntry) — jamais rétroactifs
+// sur un score déjà montré au moment où l'essai a été analysé la première fois.
 
 const NEUTRAL_WEIGHTS = { neck: 1, lowerBack: 1, hands: 1, knees: 1 };
 
@@ -79,6 +83,27 @@ function loadHistory() {
   } catch {
     return [];
   }
+}
+
+// Boucle de feedback subjectif (amélioration §1, §7 du spec) : contrairement aux essais/bilans
+// (mesures objectives, valables pour un seul bilan), les poids de pondération confort sont un
+// état ATHLÈTE qui évolue au fil du temps — indépendant d'une session en particulier — donc
+// stocké à part plutôt qu'attaché à une entrée précise de l'historique. feedbackLog garde
+// l'historique complet des sorties déclarées (chacune liée au bilan archivé dont le réglage
+// était utilisé, pour affichage/traçabilité) dans l'ordre chronologique : recalibrateWeights()
+// (moteur) ne regarde que les 2 dernières, donc le conserver en entier ici est nécessaire pour
+// qu'un appel ultérieur retrouve le bon contexte.
+export const SUBJECTIVE_STATE_KEY = 'posture-aero-subjective-v1';
+
+function loadSubjectiveState() {
+  try {
+    const raw = localStorage.getItem(SUBJECTIVE_STATE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && parsed.weights && Array.isArray(parsed.feedbackLog)) return parsed;
+  } catch {
+    // ignoré, on retombe sur l'état neutre par défaut ci-dessous
+  }
+  return { weights: NEUTRAL_WEIGHTS, feedbackLog: [] };
 }
 
 function initialStageFor(saved) {
@@ -1061,7 +1086,7 @@ function formatSessionDate(iso) {
   }
 }
 
-function HistoryCard({ entry, onOpen, onDelete }) {
+function HistoryCard({ entry, feedbackCount, onOpen, onDelete, onOpenFeedback }) {
   const nbTrials = entry.trials?.length ?? 0;
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
@@ -1075,17 +1100,25 @@ function HistoryCard({ entry, onOpen, onDelete }) {
           {entry.profile?.hipFlexibilityScore ?? '?'}/5
         </div>
       </button>
-      <button
-        onClick={() => { if (confirm('Supprimer ce bilan de l’historique ?')) onDelete(entry.id); }}
-        className="mt-2 text-xs text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
-      >
-        Supprimer
-      </button>
+      <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-neutral-800">
+        <button
+          onClick={() => onOpenFeedback(entry)}
+          className="text-xs text-cyan-300 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded px-1"
+        >
+          Retour post-sortie{feedbackCount > 0 ? ` (${feedbackCount})` : ''}
+        </button>
+        <button
+          onClick={() => { if (confirm('Supprimer ce bilan de l’historique ?')) onDelete(entry.id); }}
+          className="text-xs text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+        >
+          Supprimer
+        </button>
+      </div>
     </div>
   );
 }
 
-function HistoryScreen({ history, onOpen, onDelete, onBack }) {
+function HistoryScreen({ history, feedbackLog, onOpen, onDelete, onOpenFeedback, onBack }) {
   // Le plus récent en premier — spread avant reverse() : reverse() mute en place, et `history`
   // est le state React de App(), le muter directement casserait la détection de changement.
   const sorted = [...history].reverse();
@@ -1105,10 +1138,86 @@ function HistoryScreen({ history, onOpen, onDelete, onBack }) {
       ) : (
         <div className="space-y-3 my-4">
           {sorted.map((entry) => (
-            <HistoryCard key={entry.id} entry={entry} onOpen={onOpen} onDelete={onDelete} />
+            <HistoryCard
+              key={entry.id}
+              entry={entry}
+              feedbackCount={feedbackLog.filter((f) => f.sessionId === entry.id).length}
+              onOpen={onOpen}
+              onDelete={onDelete}
+              onOpenFeedback={onOpenFeedback}
+            />
           ))}
         </div>
       )}
+    </ScreenShell>
+  );
+}
+
+// Boucle de feedback subjectif : cf. commentaire sur SUBJECTIVE_STATE_KEY dans App.jsx.
+const FEEDBACK_ZONES = [
+  { key: 'neck', label: 'Nuque' },
+  { key: 'lowerBack', label: 'Bas du dos' },
+  { key: 'hands', label: 'Mains' },
+  { key: 'knees', label: 'Genoux' },
+];
+
+function FeedbackForm({ sessionEntry, onSubmit, onCancel }) {
+  const [scores, setScores] = useState({ neck: 1, lowerBack: 1, hands: 1, knees: 1 });
+
+  return (
+    <ScreenShell
+      eyebrow="Retour post-sortie"
+      eyebrowColor="text-cyan-400"
+      title="Comment ça s'est passé ?"
+      subtitle={
+        <p className="text-neutral-400 text-sm mb-6 leading-relaxed">
+          Sur le réglage du bilan du {formatSessionDate(sessionEntry.archivedAt)}. Une douleur qui revient sur 2 sorties de suite pèsera un
+          peu plus dans le score confort de ton prochain bilan — 1 sortie isolée ne change rien.
+        </p>
+      }
+      footer={
+        <>
+          <button
+            onClick={() => onSubmit(FEEDBACK_ZONES.map((z) => ({ zone: z.key, painScore: scores[z.key] })))}
+            className="w-full py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-cyan-200"
+          >
+            Enregistrer cette sortie
+          </button>
+          <button
+            onClick={onCancel}
+            className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+          >
+            Annuler
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-5 mt-4">
+        {FEEDBACK_ZONES.map((z) => (
+          <div key={z.key}>
+            <div className="text-sm text-neutral-200 mb-1.5">{z.label}</div>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setScores((prev) => ({ ...prev, [z.key]: n }))}
+                  className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
+                    scores[z.key] === n ? 'bg-cyan-400 border-cyan-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+                  }`}
+                  style={{ fontFamily: 'ui-monospace, monospace' }}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-between text-[10px] text-neutral-500 mt-1">
+              <span>aucune douleur</span>
+              <span>intense</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </ScreenShell>
   );
 }
@@ -1178,6 +1287,10 @@ export default function App() {
   // session en cours ou celui d'un bilan archivé.
   const [history, setHistory] = useState(() => loadHistory());
   const [resultsOrigin, setResultsOrigin] = useState('session');
+  // Boucle de feedback subjectif : cf. commentaire sur SUBJECTIVE_STATE_KEY. feedbackTarget
+  // (bilan archivé concerné) pilote l'écran 'feedback-form', null quand cet écran n'est pas actif.
+  const [subjective, setSubjective] = useState(() => loadSubjectiveState());
+  const [feedbackTarget, setFeedbackTarget] = useState(null);
 
   useEffect(() => {
     try {
@@ -1194,6 +1307,14 @@ export default function App() {
       // stockage indisponible — pas bloquant, l'historique reste juste non persistant pour cette session navigateur
     }
   }, [history]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SUBJECTIVE_STATE_KEY, JSON.stringify(subjective));
+    } catch {
+      // stockage indisponible — pas bloquant, la recalibration repart juste de zéro à la prochaine visite
+    }
+  }, [subjective]);
 
   // Audit fiabilité : photoReviewUrl (URL.createObjectURL) est recréée à chaque photo frontale
   // analysée avec succès, y compris en refaisant l'étape (redoTrialPhoto) — jamais révoquée.
@@ -1373,25 +1494,53 @@ export default function App() {
     setStage('session');
   }, [pendingTrial]);
 
+  // subjective.weights (plutôt que NEUTRAL_WEIGHTS en dur) : cf. commentaire sur
+  // SUBJECTIVE_STATE_KEY — la recalibration issue des retours post-sortie s'applique au bilan
+  // suivant, qu'il s'agisse de la session en cours ou de la relecture d'un bilan archivé.
   const runAnalysis = useCallback(() => {
-    setResult(runEngine(trials, profile, NEUTRAL_WEIGHTS));
+    setResult(runEngine(trials, profile, subjective.weights));
     setResultsOrigin('session');
     setStage('results');
-  }, [trials, profile]);
+  }, [trials, profile, subjective.weights]);
 
   // Historique : runEngine est une fonction pure (trials/profile/weights -> résultat), donc pas
   // besoin de persister le résultat calculé d'un bilan archivé — on le recalcule à la demande,
   // exactement comme pour la session en cours (runAnalysis ci-dessus). Ça évite aussi qu'un
   // résultat archivé devienne incohérent si la logique de scoring évolue plus tard.
   const viewHistoryEntry = useCallback((entry) => {
-    setResult(runEngine(entry.trials, entry.profile, NEUTRAL_WEIGHTS));
+    setResult(runEngine(entry.trials, entry.profile, subjective.weights));
     setResultsOrigin('history');
     setStage('results');
-  }, []);
+  }, [subjective.weights]);
 
   const deleteHistoryEntry = useCallback((id) => {
     setHistory((prev) => prev.filter((entry) => entry.id !== id));
   }, []);
+
+  const openFeedbackForm = useCallback((entry) => {
+    setFeedbackTarget(entry);
+    setStage('feedback-form');
+  }, []);
+
+  const cancelFeedbackForm = useCallback(() => {
+    setFeedbackTarget(null);
+    setStage('history');
+  }, []);
+
+  // entries : FeedbackEntry[] pour CETTE sortie (une valeur par zone, cf. FeedbackForm). On
+  // recalibre à partir des poids courants (pas neutres à chaque fois) pour que l'effet des
+  // sorties précédentes s'accumule dans le temps — cf. test moteur "2 sorties consécutives".
+  const submitFeedback = useCallback(
+    (entries) => {
+      setSubjective((prev) => {
+        const feedbackLog = [...prev.feedbackLog, { id: `f${Date.now()}`, date: new Date().toISOString(), sessionId: feedbackTarget?.id, entries }];
+        return { weights: recalibrateWeights(prev.weights, feedbackLog.map((f) => f.entries)), feedbackLog };
+      });
+      setFeedbackTarget(null);
+      setStage('history');
+    },
+    [feedbackTarget]
+  );
 
   const retryFromError = useCallback(() => {
     setError(null);
@@ -1417,11 +1566,15 @@ export default function App() {
       return (
         <HistoryScreen
           history={history}
+          feedbackLog={subjective.feedbackLog}
           onOpen={viewHistoryEntry}
           onDelete={deleteHistoryEntry}
+          onOpenFeedback={openFeedbackForm}
           onBack={() => setStage(profile ? 'session' : 'welcome')}
         />
       );
+    case 'feedback-form':
+      return <FeedbackForm sessionEntry={feedbackTarget} onSubmit={submitFeedback} onCancel={cancelFeedbackForm} />;
     case 'aslr-capture':
       return <PostureCaptureFlow key="aslr" initialMode="aslr_test" onCaptured={handleAslrCaptured} onCancel={cancelAslrCapture} />;
     case 'profile-form':
