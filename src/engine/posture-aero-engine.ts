@@ -425,6 +425,11 @@ function toOutputProfile(t: ScoredTrial) {
     trial_id: t.id,
     comfort_score: t.comfortScore,
     aero_score: t.aeroScore,
+    // angles : ajouté pour la tendance entre sessions (amélioration §4, App.jsx/TrendScreen) —
+    // ProfileCard ne s'en sert pas (juste comfort_score/aero_score/deltas), mais un graphe
+    // hanche/tronc/genou dans le temps en a besoin. Champ additif, ne casse aucun consommateur
+    // existant qui l'ignore simplement.
+    angles: t.angles,
     deltas: t.deltas,
     margins: t.validation.margins,
     warnings: t.validation.warnings,

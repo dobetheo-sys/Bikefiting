@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   RotateCcw,
   Loader2,
@@ -1118,7 +1118,7 @@ function HistoryCard({ entry, feedbackCount, onOpen, onDelete, onOpenFeedback })
   );
 }
 
-function HistoryScreen({ history, feedbackLog, onOpen, onDelete, onOpenFeedback, onBack }) {
+function HistoryScreen({ history, feedbackLog, onOpen, onDelete, onOpenFeedback, onViewTrend, onBack }) {
   // Le plus récent en premier — spread avant reverse() : reverse() mute en place, et `history`
   // est le state React de App(), le muter directement casserait la détection de changement.
   const sorted = [...history].reverse();
@@ -1128,9 +1128,19 @@ function HistoryScreen({ history, feedbackLog, onOpen, onDelete, onOpenFeedback,
       eyebrowColor="text-cyan-400"
       title="Tes bilans précédents"
       footer={
-        <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
-          Retour
-        </button>
+        <>
+          {sorted.length > 0 && (
+            <button
+              onClick={onViewTrend}
+              className="w-full py-3 rounded-lg border border-cyan-400/40 text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+            >
+              Voir la tendance
+            </button>
+          )}
+          <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+            Retour
+          </button>
+        </>
       }
     >
       {sorted.length === 0 ? (
@@ -1148,6 +1158,235 @@ function HistoryScreen({ history, feedbackLog, onOpen, onDelete, onOpenFeedback,
             />
           ))}
         </div>
+      )}
+    </ScreenShell>
+  );
+}
+
+// Tendance entre sessions (amélioration §4) : suggestNextAdjustment ne regarde que le tout
+// dernier essai — pour voir si les réglages successifs vont dans le bon sens, il faut comparer
+// plusieurs bilans dans le temps, pas un point isolé. Un bilan archivé sans résultat exploitable
+// (moins de 3 essais valides, cf. runEngine) n'a pas de profils Confort max/Équilibré/Aéro max
+// et est donc exclu du calcul, pas juste affiché à zéro.
+//
+// Couleurs alignées sur ProfileCard (ambre = confort, cyan = aéro, rose = équilibré) : même
+// convention que la carte de résultats, à garder synchronisée si celle-ci change.
+const PROFILE_SERIES = [
+  { key: 'confort_max', label: 'Confort max', color: '#fbbf24' },
+  { key: 'equilibre', label: 'Équilibré', color: '#f472b6' },
+  { key: 'aero_max', label: 'Aéro max', color: '#22d3ee' },
+];
+
+// p est le format de sortie du moteur (toOutputProfile) : comfort_score/aero_score en
+// snake_case, pas les noms internes ScoredTrial (comfortScore/aeroScore).
+const TREND_METRICS = [
+  { key: 'comfortScore', label: 'Score confort', unit: '', decimals: 0, extract: (p) => p.comfort_score },
+  { key: 'aeroScore', label: 'Score aéro', unit: '', decimals: 0, extract: (p) => p.aero_score },
+  { key: 'hip', label: 'Angle hanche', unit: '°', decimals: 1, extract: (p) => p.angles.hip.mean },
+  { key: 'trunk', label: 'Angle tronc', unit: '°', decimals: 1, extract: (p) => p.angles.trunk.mean },
+  { key: 'knee', label: 'Angle genou', unit: '°', decimals: 1, extract: (p) => p.angles.knee.mean },
+];
+
+function formatSessionDateShort(iso) {
+  try {
+    return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  } catch {
+    return iso;
+  }
+}
+
+const TREND_CHART_W = 300;
+const TREND_CHART_H = 84;
+const TREND_PAD_X = 8;
+const TREND_PAD_Y = 10;
+
+// SVG à viewBox fixe + aspect-ratio CSS assorti (plutôt que preserveAspectRatio="none") : le
+// ratio du viewBox correspond exactement à la boîte rendue quel que soit sa largeur réelle, donc
+// l'échelle reste uniforme en x/y — les points restent des cercles, pas des ellipses étirées.
+function TrendChart({ title, unit, decimals, seriesList, dates }) {
+  const svgRef = useRef(null);
+  const [hoverI, setHoverI] = useState(null);
+  const n = dates.length;
+
+  const allValues = seriesList.flatMap((s) => s.values);
+  const minV = Math.min(...allValues);
+  const maxV = Math.max(...allValues);
+  const span = maxV - minV || 1;
+  const yMin = minV - span * 0.15;
+  const yMax = maxV + span * 0.15;
+
+  const xAt = (i) => (n <= 1 ? TREND_CHART_W / 2 : TREND_PAD_X + (i / (n - 1)) * (TREND_CHART_W - 2 * TREND_PAD_X));
+  const yAt = (v) => TREND_CHART_H - TREND_PAD_Y - ((v - yMin) / (yMax - yMin)) * (TREND_CHART_H - 2 * TREND_PAD_Y);
+
+  const handleMove = (e) => {
+    if (!svgRef.current || n === 0) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    setHoverI(Math.min(n - 1, Math.max(0, Math.round(frac * (n - 1)))));
+  };
+
+  return (
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3">
+      <div className="text-xs text-neutral-300 mb-2">{title}</div>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${TREND_CHART_W} ${TREND_CHART_H}`}
+        className="w-full block"
+        style={{ aspectRatio: `${TREND_CHART_W} / ${TREND_CHART_H}` }}
+        onMouseMove={handleMove}
+        onMouseLeave={() => setHoverI(null)}
+      >
+        <line
+          x1={TREND_PAD_X}
+          y1={TREND_CHART_H - TREND_PAD_Y}
+          x2={TREND_CHART_W - TREND_PAD_X}
+          y2={TREND_CHART_H - TREND_PAD_Y}
+          stroke="#292524"
+          strokeWidth="1"
+        />
+        {seriesList.map((s) => (
+          <path
+            key={s.key}
+            d={s.values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(v)}`).join(' ')}
+            fill="none"
+            stroke={s.color}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+        {hoverI !== null && (
+          <line
+            x1={xAt(hoverI)}
+            y1={TREND_PAD_Y / 2}
+            x2={xAt(hoverI)}
+            y2={TREND_CHART_H - TREND_PAD_Y / 2}
+            stroke="#525252"
+            strokeWidth="1"
+            strokeDasharray="2,2"
+          />
+        )}
+        {seriesList.map((s) =>
+          s.values.map((v, i) => (
+            <circle
+              key={`${s.key}-${i}`}
+              cx={xAt(i)}
+              cy={yAt(v)}
+              r={hoverI === i ? 4.5 : 3}
+              fill={hoverI === i ? s.color : '#171717'}
+              stroke={s.color}
+              strokeWidth="2"
+            />
+          ))
+        )}
+      </svg>
+      <div className="flex justify-between text-[10px] text-neutral-500 mt-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+        <span>{formatSessionDateShort(dates[0])}</span>
+        {n > 1 && <span>{formatSessionDateShort(dates[n - 1])}</span>}
+      </div>
+      <div className="text-xs mt-1.5 h-4" style={{ fontFamily: 'ui-monospace, monospace' }}>
+        {hoverI !== null && (
+          <>
+            <span className="text-neutral-500">{formatSessionDateShort(dates[hoverI])} · </span>
+            {seriesList.map((s) => (
+              <span key={s.key} className="mr-3" style={{ color: s.color }}>
+                {s.values[hoverI].toFixed(decimals)}
+                {unit}
+              </span>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TrendScreen({ history, weights, onBack }) {
+  const [mode, setMode] = useState('equilibre'); // 'equilibre' | 'profiles'
+
+  const sorted = [...history].sort((a, b) => new Date(a.archivedAt) - new Date(b.archivedAt));
+  // runEngine est pur : recalculé à la demande à partir des poids courants, jamais persisté —
+  // même logique que viewHistoryEntry dans App().
+  const computed = sorted.map((entry) => {
+    const result = runEngine(entry.trials, entry.profile, weights);
+    return result.status === 'insufficient_valid_trials' || !result.profiles ? null : { date: entry.archivedAt, profiles: result.profiles };
+  });
+  const points = computed.filter(Boolean);
+  const excludedCount = computed.length - points.length;
+  const dates = points.map((p) => p.date);
+  const activeProfileKeys = mode === 'equilibre' ? ['equilibre'] : ['confort_max', 'equilibre', 'aero_max'];
+
+  return (
+    <ScreenShell
+      eyebrow="Tendance"
+      eyebrowColor="text-cyan-400"
+      title="Évolution entre tes bilans"
+      footer={
+        <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+          Retour à l'historique
+        </button>
+      }
+    >
+      {points.length < 2 ? (
+        <p className="text-neutral-400 text-sm my-6 leading-relaxed">
+          Pas encore assez de bilans avec résultats pour voir une tendance — il en faut au moins 2 (avec au moins 3 essais valides chacun).
+        </p>
+      ) : (
+        <>
+          <div className="flex gap-2 mt-4 mb-3">
+            <button
+              type="button"
+              onClick={() => setMode('equilibre')}
+              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
+                mode === 'equilibre' ? 'bg-cyan-400 border-cyan-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              }`}
+            >
+              Équilibré
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('profiles')}
+              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
+                mode === 'profiles' ? 'bg-cyan-400 border-cyan-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              }`}
+            >
+              Les 3 profils
+            </button>
+          </div>
+
+          {mode === 'profiles' && (
+            <div className="flex gap-4 mb-4">
+              {PROFILE_SERIES.map((s) => (
+                <div key={s.key} className="flex items-center gap-1.5 text-xs text-neutral-400">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.color }} />
+                  {s.label}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="space-y-3 mb-4">
+            {TREND_METRICS.map((m) => (
+              <TrendChart
+                key={m.key}
+                title={m.label}
+                unit={m.unit}
+                decimals={m.decimals}
+                dates={dates}
+                seriesList={activeProfileKeys.map((pk) => {
+                  const ps = PROFILE_SERIES.find((s) => s.key === pk);
+                  return { key: pk, label: ps.label, color: ps.color, values: points.map((p) => m.extract(p.profiles[pk])) };
+                })}
+              />
+            ))}
+          </div>
+
+          {excludedCount > 0 && (
+            <p className="text-xs text-neutral-500 mb-4">
+              {excludedCount} bilan{excludedCount > 1 ? 's' : ''} archivé{excludedCount > 1 ? 's' : ''} sans assez d'essais valides, non inclus.
+            </p>
+          )}
+        </>
       )}
     </ScreenShell>
   );
@@ -1570,9 +1809,12 @@ export default function App() {
           onOpen={viewHistoryEntry}
           onDelete={deleteHistoryEntry}
           onOpenFeedback={openFeedbackForm}
+          onViewTrend={() => setStage('trend')}
           onBack={() => setStage(profile ? 'session' : 'welcome')}
         />
       );
+    case 'trend':
+      return <TrendScreen history={history} weights={subjective.weights} onBack={() => setStage('history')} />;
     case 'feedback-form':
       return <FeedbackForm sessionEntry={feedbackTarget} onSubmit={submitFeedback} onCancel={cancelFeedbackForm} />;
     case 'aslr-capture':
