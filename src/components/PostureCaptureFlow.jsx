@@ -946,6 +946,18 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
     setScreen('review');
   };
 
+  // Audit ergonomie : "Annuler" ici démonte tout le composant (retour à trial-overview côté
+  // App.jsx), perdant TOUT l'état interne — y compris measureResults, les étapes déjà validées
+  // pour ce même essai (ex. PMH complété, en train de taper PMB) qui n'existent que dans ce
+  // composant tant que finish() n'a pas été appelé. Confirme uniquement s'il y a vraiment
+  // quelque chose à perdre (une étape déjà validée, ou des points en cours sur celle-ci) — un
+  // essai tout juste commencé n'a rien à confirmer.
+  const handleCancelMeasure = () => {
+    const hasProgress = measureResults.length > 0 || measurePoints.length > 0;
+    if (hasProgress && !confirm('Abandonner cette mesure ? Les étapes déjà validées pour cet essai seront perdues.')) return;
+    onCancel?.();
+  };
+
   const finishMeasureStep = () => {
     if (!measureResult) return;
     const allResults = [...measureResults, measureResult];
@@ -1268,6 +1280,14 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 </button>
               )}
             </div>
+            {/* Audit ergonomie : cet écran ('review') n'avait AUCUNE sortie — seul "Reprendre"
+                (qui relance une capture, pas un abandon) était proposé. Un utilisateur qui vient
+                de filmer/importer et veut simplement abandonner cette étape était bloqué. */}
+            {onCancel && (
+              <button onClick={handleCancelMeasure} className="w-full text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
+                Annuler
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1376,7 +1396,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               <Check className="w-4 h-4" /> {measureStepIndex + 1 < manualSteps.length ? 'Valider et passer à l’étape suivante' : 'Valider la mesure'}
             </button>
             {onCancel && (
-              <button onClick={onCancel} className="w-full text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
+              <button onClick={handleCancelMeasure} className="w-full text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
                 Annuler
               </button>
             )}
@@ -1447,6 +1467,13 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             >
               <Check className="w-4 h-4" /> Valider l'étalonnage
             </button>
+            {/* Audit ergonomie : cet écran ('calibrate') n'avait aucune sortie non plus — cf.
+                le même correctif sur l'écran 'review'. */}
+            {onCancel && (
+              <button onClick={onCancel} className="w-full text-xs text-neutral-600 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
+                Annuler
+              </button>
+            )}
           </div>
         </div>
       )}
