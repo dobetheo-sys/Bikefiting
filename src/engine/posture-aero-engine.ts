@@ -8,13 +8,11 @@
 
 // ---------- Types ----------
 
-export interface AngleStats {
-  mean: number;
-  min: number;
-  max: number;
-  amplitude: number;
-  variance: number;
-}
+// AngleStats vit dans src/shared/geometry.ts (avec stats(), qui le produit) depuis que le
+// moteur de course réutilise la même agrégation. Ré-exporté ici à l'identique pour ne casser
+// aucun import existant.
+import type { AngleStats } from '../shared/geometry';
+export type { AngleStats };
 
 export interface TrialAngles {
   hip: AngleStats;   // torse-hanche-cuisse, degrés, mesuré au PMH
@@ -67,18 +65,14 @@ export interface Trial {
   deltas: { saddleHeightMm: number; saddleSetbackMm?: number; reachMm: number; dropMm: number; hasAeroBars?: boolean };
 }
 
-export interface Violation {
-  param: string;
-  value: number;
-  bound: number;
-}
-
-export interface ValidationResult {
-  valid: boolean;
-  violations: Violation[];
-  warnings: Violation[];
-  margins: Record<string, number>;
-}
+// Violation / ValidationResult / quadPenalty / la dominance de Pareto vivent dans
+// src/shared/analysis.ts : rien là-dedans n'est spécifique au vélo, et le moteur de course
+// réutilise les mêmes briques pour que "essai exclu" et "front de Pareto" veuillent dire
+// exactement la même chose des deux côtés. Ré-exportés ici à l'identique (aucun import
+// existant ne change).
+import { paretoDominant, quadPenalty } from '../shared/analysis';
+import type { ValidationResult, Violation } from '../shared/analysis';
+export type { ValidationResult, Violation };
 
 export interface ScoredTrial extends Trial {
   validation: ValidationResult;
@@ -264,12 +258,6 @@ export function suggestNextAdjustment(t: Trial, profile: AthleteProfile): Adjust
 
 // ---------- §4 — Score confort ----------
 
-function quadPenalty(distance: number, scale: number, cap = 40): number {
-  // distance <= 0 => dans la plage confortable, pas de pénalité
-  if (distance <= 0) return 0;
-  return Math.min(cap, scale * distance * distance);
-}
-
 export function computeComfortScore(t: Trial, profile: AthleteProfile, weights: SubjectiveWeights): number {
   let score = 100;
 
@@ -325,16 +313,13 @@ export function computeAeroScore(t: Trial, cohortMaxPFSANorm: number): number {
 // ---------- §6 — Front de Pareto + sélection des 3 profils ----------
 
 export function paretoFront(trials: ScoredTrial[]): ScoredTrial[] {
+  // Le filtre de validité reste ici (c'est une règle du moteur vélo, §6 du spec) ; seule la
+  // dominance elle-même est partagée avec le moteur de course.
   const valid = trials.filter((t) => t.validation.valid);
-  return valid.filter(
-    (a) =>
-      !valid.some(
-        (b) =>
-          b.id !== a.id &&
-          b.comfortScore >= a.comfortScore &&
-          b.aeroScore >= a.aeroScore &&
-          (b.comfortScore > a.comfortScore || b.aeroScore > a.aeroScore)
-      )
+  return paretoDominant(
+    valid,
+    (t) => t.comfortScore,
+    (t) => t.aeroScore
   );
 }
 

@@ -7,6 +7,10 @@ handoff structuré pour Claude Code, tests réels avant de considérer une briqu
 **Statut : V1, position aéro uniquement.** Le module position guidon n'est pas commencé
 (réutilisera ce pipeline, cf. `docs/SPEC_POSTURE_AERO_MOTEUR.md` §10).
 
+Un **second moteur, analyse de foulée (course à pied)**, partage désormais le même pipeline de
+capture et les mêmes briques de scoring — moteur et couche de mesure faits et testés, aucune UI
+branchée. Voir `docs/SPEC_MOTEUR_COURSE.md`.
+
 ## Ce qui est fait et testé
 
 | Brique | Fichier | Testé comment |
@@ -19,6 +23,19 @@ handoff structuré pour Claude Code, tests réels avant de considérer une briqu
 | Flux de capture caméra (UI) | `src/components/PostureCaptureFlow.jsx` | **Exécuté dans un vrai Chromium** (Playwright headless, caméra simulée) : intro → sélection mode → caméra → capture photo → étalonnage par taps, sans erreur. Un vrai bug a été trouvé et corrigé ce faisant (apostrophe échappée en texte JSX brut, s'affichait littéralement) |
 | Test ASLR (souplesse hanche) | `src/capture/capture-processing.ts` (`extractAslrAngle`) | Testé (angle cuisse au point d'arrêt = genou qui plie, coordonnées construites à la main) |
 | App (session complète : ASLR → profil → essais → `runEngine`) | `src/App.jsx` | Build de prod OK. Flux vérifié dans un vrai Chromium headless (caméra simulée) jusqu'à l'écran d'analyse ASLR inclus (checklist, enregistrement, bouton Valider, écran de chargement, retry) — le déclenchement réel de l'inférence (`ImageSegmenter.segment()` / `PoseLandmarker.detectForVideo()`) reste bloqué par la limite d'environnement ci-dessous |
+
+### Moteur course à pied (V1, sans UI)
+
+| Brique | Fichier | Testé comment |
+|---|---|---|
+| Moteur foulée (validation, score charge, score économie, Pareto, suggestion) | `src/engine/running-gait-engine.ts` | Tests `node:test` : opposition charge↔économie vérifiée sur les 3 points du balayage, front non dégénéré, refus explicites |
+| Mesure course (6 taps → angles, cadence, oscillation verticale) | `src/capture/running-capture-processing.ts` | Géométrie vérifiée à la main, dont l'invariance au sens de filmage (même geste filmé des deux côtés = mêmes chiffres) |
+| Cadence automatique depuis les landmarks | `src/capture/running-capture-processing.ts` (`estimateCadenceFromFrames`) | Signal synthétique : 180 pas/min mesurés sur une vérité terrain de 180, garde-fou Nyquist testé. **Non validé sur appareil réel** |
+| Primitives partagées vélo/course | `src/shared/geometry.ts`, `src/shared/analysis.ts` | Extraites de `capture-processing.ts`/`posture-aero-engine.ts` sans changement de comportement (tests vélo inchangés et toujours verts) |
+
+Ce que ce moteur **ne fait pas** : aucune UI, rien n'est branché dans `App.jsx`. Il est utilisable
+comme bibliothèque, pas depuis l'application. Limites du protocole (tapis uniquement, scores
+relatifs à la session, pas de prédiction de blessure) détaillées au §8 de son spec.
 
 `npm test` fait tourner tous les tests. `npm run typecheck` type-checke tout `src/`.
 `npm run dev` / `npm run build` lancent l'app (shell Vite + Tailwind posé sur `PostureCaptureFlow.jsx`).
@@ -63,17 +80,25 @@ requête marche en CLI" et "elle échoue dans un vrai navigateur ici".
 
 ```
 docs/
-  SPEC_POSTURE_AERO_MOTEUR.md    # spec fonctionnelle complète, table de confiance des sources
+  SPEC_POSTURE_AERO_MOTEUR.md    # spec vélo, table de confiance des sources
+  SPEC_MOTEUR_COURSE.md          # spec course, même format (sources vérifiées vs hypothèses)
 scripts/
   copy-mediapipe-wasm.mjs        # copie le WASM de @mediapipe/tasks-vision vers public/ (predev/prebuild)
 src/
   main.jsx, App.jsx, index.css   # shell Vite : orchestre capture -> inférence -> résultat
+  shared/
+    geometry.ts                  # angles, index MediaPipe, agrégation — partagé vélo/course
+    analysis.ts                  # violations, dominance de Pareto, pénalité quadratique
   engine/
-    posture-aero-engine.ts       # logique pure : validation, scores, Pareto, feedback
+    posture-aero-engine.ts       # vélo : validation, scores, Pareto, feedback
     posture-aero-engine.test.ts
+    running-gait-engine.ts       # course : validation, charge/économie, Pareto, suggestion
+    running-gait-engine.test.ts
   capture/
-    capture-processing.ts        # landmarks -> angles, masque -> pFSA
+    capture-processing.ts        # vélo : landmarks -> angles, masque -> pFSA
     capture-processing.test.ts
+    running-capture-processing.ts      # course : taps -> métriques, cadence, oscillation
+    running-capture-processing.test.ts
     segmentation-integration.ts  # ImageSegmenter réel + conversion résultat -> BinaryMask
     segmentation-integration.test.ts
     pose-integration.ts          # PoseLandmarker réel + conversion résultat -> PoseFrame
@@ -88,7 +113,7 @@ src/
 
 ```bash
 npm install
-npm test          # 29 tests, tous passants au moment de l'écriture de ce README
+npm test          # 118 tests (vélo + course), tous passants au moment de l'écriture de ce README
 npm run typecheck
 npm run dev        # app de dev (nécessite un navigateur avec caméra pour la capture réelle)
 npm run build       # build de prod (vérifié, voir dist/)
