@@ -686,9 +686,9 @@ function ReviewMarker({ point, size, label }) {
   const top = `${(point.y / size.height) * 100}%`;
   return (
     <div className="pointer-events-none">
-      <div className="absolute w-3 h-3 rounded-full bg-cyan-400 border-2 border-neutral-950" style={{ left, top, transform: 'translate(-50%,-50%)' }} />
+      <div className="absolute w-3 h-3 rounded-full bg-cyan border-2 border-bg" style={{ left, top, transform: 'translate(-50%,-50%)' }} />
       {label && (
-        <span className="absolute px-1 rounded bg-black/50 text-[8px] leading-tight text-cyan-200 whitespace-nowrap" style={{ left, top, transform: 'translate(10px, -50%)' }}>
+        <span className="absolute px-1 rounded bg-black/50 text-[8px] leading-tight text-cyan whitespace-nowrap" style={{ left, top, transform: 'translate(10px, -50%)' }}>
           {label}
         </span>
       )}
@@ -710,10 +710,10 @@ function TrialReviewScreen({ step, pendingTrial, onClose, onRedo }) {
       title="Relecture de la mesure"
       footer={
         <>
-          <button onClick={onClose} className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200">
+          <button onClick={onClose} className="w-full py-3 rounded-control bg-gold text-ink font-semibold focus:outline-none focus:ring-2 focus:ring-cyan">
             Fermer
           </button>
-          <button onClick={onRedo} className="w-full flex items-center justify-center gap-2 py-2 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
+          <button onClick={onRedo} className="w-full flex items-center justify-center gap-2 py-2 text-sm text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded">
             <RotateCcw className="w-3.5 h-3.5" /> Refaire cette étape
           </button>
         </>
@@ -722,14 +722,14 @@ function TrialReviewScreen({ step, pendingTrial, onClose, onRedo }) {
       <div className="space-y-4 mt-4 mb-6">
         {step === 'video' &&
           videoReview.map((r, i) => (
-            <div key={i} className="rounded-lg border border-neutral-800 bg-neutral-900 overflow-hidden">
+            <div key={i} className="rounded-card border border-border bg-surface overflow-hidden">
               <div className="relative bg-black">
                 <img src={r.stillUrl} alt={`Image mesurée — ${r.key}`} className="w-full h-auto block" />
                 {r.points.map((p, j) => (
                   <ReviewMarker key={j} point={p} size={r.stillSize} label={r.pointLabels[j]} />
                 ))}
               </div>
-              <div className="p-3 text-sm text-neutral-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+              <div className="p-3 text-sm text-text-dim font-mono">
                 {r.key === 'pmh' && `Hanche ${r.result.hipAngle}° · Tronc ${r.result.trunkAngle}°`}
                 {r.key === 'pmb' && `Genou ${r.result.kneeAngle}°`}
                 {r.key === 'raise' && `Angle ${r.result.angle}° · Genou ${r.result.kneeAngle}°`}
@@ -737,13 +737,11 @@ function TrialReviewScreen({ step, pendingTrial, onClose, onRedo }) {
             </div>
           ))}
         {step === 'photo' && pendingTrial?.photoReviewUrl && (
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900 overflow-hidden">
+          <div className="rounded-card border border-border bg-surface overflow-hidden">
             <div className="bg-black">
               <img src={pendingTrial.photoReviewUrl} alt="Photo frontale mesurée" className="w-full h-auto block" />
             </div>
-            <div className="p-3 text-sm text-neutral-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
-              pFSA {pendingTrial.frontal?.pFSA_cm2} cm²
-            </div>
+            <div className="p-3 text-sm text-text-dim font-mono">pFSA {pendingTrial.frontal?.pFSA_cm2} cm²</div>
           </div>
         )}
       </div>
@@ -753,9 +751,16 @@ function TrialReviewScreen({ step, pendingTrial, onClose, onRedo }) {
 
 // Schéma statique (pas à l'échelle) pour rendre "hauteur de selle / recul de selle / reach /
 // drop" concrets pour un débutant qui ne maîtrise pas le jargon bikefitting — retour terrain :
-// "il faut expliciter ces termes pour les débutants et même un petit schéma". Couleur ambre =
-// mesures liées à la selle (cohérent avec l'eyebrow ambre de cet écran), cyan = mesures liées
-// au cintre, pour que la légende texte et le schéma se répondent visuellement.
+// "il faut expliciter ces termes pour les débutants et même un petit schéma". Couleur orange =
+// mesures liées à la selle (domaine confort, cf. table de correspondance du restyle Zenna),
+// cyan = mesures liées au cintre (domaine aéro), pour que la légende texte et le schéma se
+// répondent visuellement — indépendant de la couleur de l'eyebrow de cet écran (resté au or
+// générique de ScreenShell : cet écran couvre les 2 domaines, pas un seul).
+//
+// Restyle Zenna : #fbbf24/#22d3ee en dur remplacés par var(--color-orange)/var(--color-cyan) —
+// seule source de vérité pour ces 2 teintes, plus besoin de resynchroniser ce schéma à la main
+// si la palette change encore. La silhouette du vélo (gris neutres) reste en dur : purement
+// décorative, indépendante du thème de couleur.
 function BikeDeltasDiagram() {
   const bb = { x: 155, y: 200 };
   const saddle = { x: 95, y: 80 };
@@ -765,14 +770,14 @@ function BikeDeltasDiagram() {
   const frontHub = { x: 280, y: 240 };
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3 mb-6">
+    <div className="rounded-card border border-border bg-surface p-3 mb-6">
       <svg viewBox="0 0 360 290" className="w-full h-auto" role="img" aria-label="Schéma des mesures de réglage du vélo : hauteur et recul de selle, reach, drop">
         <defs>
-          <marker id="arrow-amber" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="#fbbf24" />
+          <marker id="arrow-orange" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--color-orange)" />
           </marker>
           <marker id="arrow-cyan" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="#22d3ee" />
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--color-cyan)" />
           </marker>
         </defs>
 
@@ -792,37 +797,63 @@ function BikeDeltasDiagram() {
         <ellipse cx={saddle.x} cy={saddle.y} rx="16" ry="5" fill="#737373" />
         <circle cx={bar.x} cy={bar.y} r="5" fill="#737373" />
 
-        {/* Hauteur de selle (ambre, verticale, à gauche) */}
-        <g stroke="#fbbf24" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+        {/* Hauteur de selle (orange, verticale, à gauche) */}
+        <g stroke="var(--color-orange)" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
           <line x1={bb.x} y1={bb.y} x2="30" y2={bb.y} />
           <line x1={saddle.x} y1={saddle.y} x2="30" y2={saddle.y} />
         </g>
-        <line x1="30" y1={bb.y} x2="30" y2={saddle.y} stroke="#fbbf24" strokeWidth="2" markerStart="url(#arrow-amber)" markerEnd="url(#arrow-amber)" />
-        <text x="14" y={(bb.y + saddle.y) / 2} fill="#fbbf24" fontSize="11" textAnchor="middle" transform={`rotate(-90 14 ${(bb.y + saddle.y) / 2})`}>hauteur selle</text>
+        <line
+          x1="30"
+          y1={bb.y}
+          x2="30"
+          y2={saddle.y}
+          stroke="var(--color-orange)"
+          strokeWidth="2"
+          markerStart="url(#arrow-orange)"
+          markerEnd="url(#arrow-orange)"
+        />
+        <text x="14" y={(bb.y + saddle.y) / 2} fill="var(--color-orange)" fontSize="11" textAnchor="middle" transform={`rotate(-90 14 ${(bb.y + saddle.y) / 2})`}>
+          hauteur selle
+        </text>
 
-        {/* Recul de selle (ambre, horizontale, en bas) */}
-        <g stroke="#fbbf24" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+        {/* Recul de selle (orange, horizontale, en bas) */}
+        <g stroke="var(--color-orange)" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
           <line x1={saddle.x} y1={saddle.y} x2={saddle.x} y2="272" />
           <line x1={bb.x} y1={bb.y} x2={bb.x} y2="272" />
         </g>
-        <line x1={saddle.x} y1="272" x2={bb.x} y2="272" stroke="#fbbf24" strokeWidth="2" markerStart="url(#arrow-amber)" markerEnd="url(#arrow-amber)" />
-        <text x={(saddle.x + bb.x) / 2} y="285" fill="#fbbf24" fontSize="11" textAnchor="middle">recul selle</text>
+        <line
+          x1={saddle.x}
+          y1="272"
+          x2={bb.x}
+          y2="272"
+          stroke="var(--color-orange)"
+          strokeWidth="2"
+          markerStart="url(#arrow-orange)"
+          markerEnd="url(#arrow-orange)"
+        />
+        <text x={(saddle.x + bb.x) / 2} y="285" fill="var(--color-orange)" fontSize="11" textAnchor="middle">
+          recul selle
+        </text>
 
         {/* Reach (cyan, horizontale, en haut) */}
-        <g stroke="#22d3ee" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+        <g stroke="var(--color-cyan)" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
           <line x1={saddle.x} y1={saddle.y} x2={saddle.x} y2="16" />
           <line x1={bar.x} y1={bar.y} x2={bar.x} y2="16" />
         </g>
-        <line x1={saddle.x} y1="16" x2={bar.x} y2="16" stroke="#22d3ee" strokeWidth="2" markerStart="url(#arrow-cyan)" markerEnd="url(#arrow-cyan)" />
-        <text x={(saddle.x + bar.x) / 2} y="12" fill="#22d3ee" fontSize="11" textAnchor="middle">reach</text>
+        <line x1={saddle.x} y1="16" x2={bar.x} y2="16" stroke="var(--color-cyan)" strokeWidth="2" markerStart="url(#arrow-cyan)" markerEnd="url(#arrow-cyan)" />
+        <text x={(saddle.x + bar.x) / 2} y="12" fill="var(--color-cyan)" fontSize="11" textAnchor="middle">
+          reach
+        </text>
 
         {/* Drop (cyan, verticale, à droite) */}
-        <g stroke="#22d3ee" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+        <g stroke="var(--color-cyan)" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
           <line x1={saddle.x} y1={saddle.y} x2="335" y2={saddle.y} />
           <line x1={bar.x} y1={bar.y} x2="335" y2={bar.y} />
         </g>
-        <line x1="335" y1={saddle.y} x2="335" y2={bar.y} stroke="#22d3ee" strokeWidth="2" markerStart="url(#arrow-cyan)" markerEnd="url(#arrow-cyan)" />
-        <text x="351" y={(saddle.y + bar.y) / 2} fill="#22d3ee" fontSize="11" textAnchor="middle" transform={`rotate(-90 351 ${(saddle.y + bar.y) / 2})`}>drop</text>
+        <line x1="335" y1={saddle.y} x2="335" y2={bar.y} stroke="var(--color-cyan)" strokeWidth="2" markerStart="url(#arrow-cyan)" markerEnd="url(#arrow-cyan)" />
+        <text x="351" y={(saddle.y + bar.y) / 2} fill="var(--color-cyan)" fontSize="11" textAnchor="middle" transform={`rotate(-90 351 ${(saddle.y + bar.y) / 2})`}>
+          drop
+        </text>
       </svg>
     </div>
   );
@@ -969,29 +1000,23 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
 
 function ProfileCard({ title, accent, profile }) {
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-      <div className={`text-xs tracking-widest uppercase mb-2 ${accent}`} style={{ fontFamily: 'ui-monospace, monospace' }}>
+    <div className="rounded-card border border-border bg-surface p-4">
+      <div className={`text-xs tracking-widest uppercase mb-2 font-mono ${accent}`}>
         {title} · {profile.trial_id}
       </div>
       <div className="flex gap-6 mb-2">
         <div>
-          <div className="text-2xl font-semibold text-neutral-100" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            {profile.comfort_score}
-          </div>
-          <div className="text-xs text-neutral-500">confort</div>
+          <div className="font-display text-4xl text-text">{profile.comfort_score}</div>
+          <div className="text-xs text-text-faint">confort</div>
         </div>
         <div>
-          <div className="text-2xl font-semibold text-neutral-100" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            {profile.aero_score}
-          </div>
-          <div className="text-xs text-neutral-500">aéro</div>
+          <div className="font-display text-4xl text-text">{profile.aero_score}</div>
+          <div className="text-xs text-text-faint">aéro</div>
         </div>
       </div>
-      <div className="text-xs text-neutral-500" style={{ fontFamily: 'ui-monospace, monospace' }}>
-        {formatDeltas(profile.deltas)}
-      </div>
+      <div className="text-xs text-text-faint font-mono">{formatDeltas(profile.deltas)}</div>
       {profile.warnings.length > 0 && (
-        <div className="text-xs text-amber-400 mt-2 space-y-0.5">
+        <div className="text-xs text-gold mt-2 space-y-0.5">
           {profile.warnings.map((w, i) => (
             <div key={i}>{formatViolation(w)} — avertissement, pas exclusoire</div>
           ))}
@@ -1029,7 +1054,7 @@ function ExcludedTrialsList({ excludedTrials }) {
   return (
     <div className="space-y-2 mb-6">
       {excludedTrials.map((e) => (
-        <div key={e.trial_id} className="text-xs text-neutral-500" style={{ fontFamily: 'ui-monospace, monospace' }}>
+        <div key={e.trial_id} className="text-xs text-text-faint font-mono">
           {e.trial_id} : {e.violations.map(formatViolation).join(', ')}
         </div>
       ))}
@@ -1129,12 +1154,15 @@ function HistoryScreen({ history, feedbackLog, onOpen, onDelete, onOpenFeedback,
 // (moins de 3 essais valides, cf. runEngine) n'a pas de profils Confort max/Équilibré/Aéro max
 // et est donc exclu du calcul, pas juste affiché à zéro.
 //
-// Couleurs alignées sur ProfileCard (ambre = confort, cyan = aéro, rose = équilibré) : même
-// convention que la carte de résultats, à garder synchronisée si celle-ci change.
+// Couleurs alignées sur ProfileCard (orange = confort, or = équilibré, cyan = aéro) : même
+// convention que la carte de résultats, à garder synchronisée si celle-ci change. var(--color-*)
+// plutôt que du hex en dur (restyle Zenna) : une seule source de vérité pour ces 3 teintes,
+// que ce SVG et les classes Tailwind de ProfileCard partagent — les attributs de présentation
+// SVG (stroke/fill) résolvent les custom properties CSS comme n'importe quelle autre valeur.
 const PROFILE_SERIES = [
-  { key: 'confort_max', label: 'Confort max', color: '#fbbf24' },
-  { key: 'equilibre', label: 'Équilibré', color: '#f472b6' },
-  { key: 'aero_max', label: 'Aéro max', color: '#22d3ee' },
+  { key: 'confort_max', label: 'Confort max', color: 'var(--color-orange)' },
+  { key: 'equilibre', label: 'Équilibré', color: 'var(--color-gold)' },
+  { key: 'aero_max', label: 'Aéro max', color: 'var(--color-cyan)' },
 ];
 
 // p est le format de sortie du moteur (toOutputProfile) : comfort_score/aero_score en
@@ -1425,9 +1453,9 @@ function ResultsScreen({ result, onBack, backLabel = 'Retour à la session' }) {
   return (
     <ScreenShell
       eyebrow="Résultats"
-      eyebrowColor="text-cyan-400"
+      eyebrowColor="text-cyan"
       footer={
-        <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+        <button onClick={onBack} className="w-full py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold">
           {backLabel}
         </button>
       }
@@ -1436,7 +1464,7 @@ function ResultsScreen({ result, onBack, backLabel = 'Retour à la session' }) {
         {result.status === 'insufficient_valid_trials' ? (
           <>
             <h1 className="text-xl font-semibold mb-4">Pas encore assez d’essais valides</h1>
-            <p className="text-neutral-400 text-sm mb-6">{result.message}</p>
+            <p className="text-text-dim text-sm mb-6">{result.message}</p>
             <ExcludedTrialsList excludedTrials={result.excluded_trials} />
           </>
         ) : (
@@ -1447,16 +1475,15 @@ function ResultsScreen({ result, onBack, backLabel = 'Retour à la session' }) {
             </h1>
             {result.profiles ? (
               <div className="space-y-3 my-6">
-                {/* Audit visuel : convention couleur de l'appli — ambre = selle/confort,
-                    cyan = cintre/aéro (cf. TapImage, ASLR...). Ces 3 cartes utilisaient un
-                    mappage sans rapport (confort en cyan, aéro en rose) qui contredisait cette
-                    convention partout ailleurs dans l'app. */}
-                <ProfileCard title="Confort max" accent="text-amber-400" profile={result.profiles.confort_max} />
-                <ProfileCard title="Équilibré" accent="text-pink-400" profile={result.profiles.equilibre} />
-                <ProfileCard title="Aéro max" accent="text-cyan-400" profile={result.profiles.aero_max} />
+                {/* Convention couleur de l'appli (restyle Zenna) : orange = selle/confort, or =
+                    équilibré, cyan = cintre/aéro — même mapping que PROFILE_SERIES/TrendChart et
+                    le schéma BikeDeltasDiagram, à garder synchronisés si l'un des 3 change. */}
+                <ProfileCard title="Confort max" accent="text-orange" profile={result.profiles.confort_max} />
+                <ProfileCard title="Équilibré" accent="text-gold" profile={result.profiles.equilibre} />
+                <ProfileCard title="Aéro max" accent="text-cyan" profile={result.profiles.aero_max} />
               </div>
             ) : (
-              <p className="text-neutral-400 text-sm my-6">Aucun front Pareto disponible.</p>
+              <p className="text-text-dim text-sm my-6">Aucun front Pareto disponible.</p>
             )}
             <ExcludedTrialsList excludedTrials={result.excluded_trials} />
           </>
