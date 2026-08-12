@@ -17,9 +17,13 @@ import {
   ChevronRight,
   Circle,
   History,
+  Footprints,
 } from 'lucide-react';
 import PostureCaptureFlow from './components/PostureCaptureFlow.jsx';
 import PrivacyNote from './components/PrivacyNote.jsx';
+import RunningSession from './components/RunningSession.jsx';
+// Primitives d'écran désormais partagées avec le parcours course, cf. components/ui.jsx.
+import { Shell, Busy, ErrorScreen, ProgressBar, ScreenShell, StepCard, GearItem, NumberField } from './components/ui.jsx';
 import { getVisionFileset } from './capture/mediapipe-vision';
 import { createBikeFitSegmenter, toBikeFitBinaryMask } from './capture/segmentation-integration';
 import { computePFSA_cm2, KNEE_STRAIGHT_THRESHOLD } from './capture/capture-processing';
@@ -114,6 +118,18 @@ function initialStageFor(saved) {
   // sans aucun moyen de refaire le test tant que "Continuer" n'avait pas été cliqué — retour
   // terrain (08/08/2026), un même "0°" obsolète réapparaissait à chaque réouverture. Refaire
   // le test ASLR est rapide ; rester coincé sur un résultat périmé est pire.
+  //
+  // Mais une session VIDE (aucun essai, aucun profil, aucun test de souplesse) n'est pas une
+  // session à reprendre. Trouvé en pilotant l'appli dans un vrai Chromium : l'effet de
+  // persistance écrit SESSION_STORAGE_KEY dès le premier rendu, avec des valeurs nulles.
+  // Résultat, `saved` était toujours truthy à la deuxième visite et TOUT visiteur revenant
+  // sans avoir rien fait atterrissait directement sur la capture ASLR — sans jamais revoir
+  // l'accueil, donc sans le déroulé, le matériel nécessaire, ni le parcours course (dont
+  // l'entrée n'existe que là). La seule échappatoire était d'annuler une capture qu'il n'avait
+  // pas demandée. Cette condition ne change rien au cas décrit ci-dessus (un aslrAngle
+  // réellement enregistré renvoie toujours vers le test), elle distingue juste "rien à
+  // reprendre" de "quelque chose à reprendre".
+  if (saved.aslrAngle == null) return 'welcome';
   return 'aslr-capture';
 }
 
@@ -130,121 +146,7 @@ async function processFrontalPhoto(blob, calibration) {
   }
 }
 
-function Shell({ children }) {
-  return <div className="w-full h-full min-h-screen bg-bg text-text font-sans flex flex-col">{children}</div>;
-}
-
-function Busy({ label, progress }) {
-  const pct = progress && progress.total > 0 ? Math.min(100, Math.round((progress.current / progress.total) * 100)) : null;
-  return (
-    <Shell>
-      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center max-w-xs mx-auto w-full">
-        <Loader2 className="w-6 h-6 text-gold animate-spin mb-4" />
-        <p className="text-sm text-text-dim mb-4">{label}</p>
-        {pct !== null && (
-          <>
-            <ProgressBar value={progress.current} max={progress.total} />
-            <p className="text-xs text-text-faint font-mono mt-2">
-              {progress.current}/{progress.total} images analysées · {pct}%
-            </p>
-          </>
-        )}
-      </div>
-    </Shell>
-  );
-}
-
-function ErrorScreen({ message, onRetry }) {
-  return (
-    <Shell>
-      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center max-w-md mx-auto w-full">
-        <AlertTriangle className="w-8 h-8 text-gold mb-3" />
-        <p className="text-text text-sm">{message}</p>
-        <p className="text-xs text-text-faint mt-2">Pas de souci, ce que tu as déjà rempli est conservé.</p>
-        <button
-          onClick={onRetry}
-          className="mt-6 flex items-center gap-2 py-3 px-5 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold"
-        >
-          <RotateCcw className="w-4 h-4" /> Réessayer
-        </button>
-      </div>
-    </Shell>
-  );
-}
-
-function ProgressBar({ value, max }) {
-  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
-  return (
-    <div className="w-full h-1.5 rounded-full bg-surface-3 overflow-hidden">
-      <div className="h-full bg-gold transition-[width] duration-300" style={{ width: `${pct}%` }} />
-    </div>
-  );
-}
-
-// Écrans "formulaire/liste" (profil, session, essai, réglages, résultats) : contenu
-// potentiellement plus long qu'un écran (liste d'essais qui grandit, checklist d'un
-// essai) — même pattern que WelcomeScreen (h-screen + zone scrollable + CTA ancré en
-// bas) plutôt que Shell/min-h-screen + centrage vertical, pour que le bouton principal
-// reste toujours atteignable sans avoir à scroller d'abord (retour d'audit ergonomique :
-// "CTA ancré en bas partout").
-//
-// Restyle Zenna : le h1 générique reste en Inter (font-sans), pas en Bebas Neue — ce slot
-// accueille aussi bien des titres courts ("Résultat") que des phrases longues ("Quelles
-// sont les mesures actuelles du vélo ?"), et Bebas Neue (police display condensée) casse
-// la lisibilité sur du texte long. Réservé aux vrais titres héros courts, au cas par cas.
-function ScreenShell({ eyebrow, eyebrowColor = 'text-gold', title, subtitle, children, footer }) {
-  return (
-    <div className="w-full h-screen bg-bg text-text font-sans flex flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto">
-        <div className="px-6 pt-10 pb-8 max-w-md mx-auto w-full">
-          {eyebrow && <div className={`text-xs tracking-widest uppercase mb-2 font-mono ${eyebrowColor}`}>{eyebrow}</div>}
-          {title && <h1 className="text-xl font-semibold mb-1">{title}</h1>}
-          {subtitle}
-          {children}
-        </div>
-      </div>
-      {footer && (
-        <div className="px-6 py-5 border-t border-border bg-bg">
-          <div className="max-w-md mx-auto w-full space-y-3">{footer}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StepCard({ icon: Icon, step, title, duration, children, accent }) {
-  return (
-    <div className="rounded-card border border-border bg-surface p-4 flex gap-4">
-      <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold font-mono ${accent}`}>{step}</div>
-      <div className="min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <Icon className="w-4 h-4 text-text-faint shrink-0" />
-          <h3 className="font-medium text-text">{title}</h3>
-        </div>
-        <p className="text-sm text-text-dim leading-relaxed">{children}</p>
-        {duration && (
-          <div className="flex items-center gap-1.5 mt-2 text-xs text-text-faint font-mono">
-            <Timer className="w-3 h-3" /> {duration}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function GearItem({ icon: Icon, title, children }) {
-  return (
-    <div className="flex gap-3 py-3 border-b border-border last:border-b-0">
-      <Icon className="w-4 h-4 text-cyan shrink-0 mt-0.5" />
-      <div className="min-w-0">
-        <div className="text-sm text-text">{title}</div>
-        <p className="text-xs text-text-faint mt-0.5 leading-relaxed">{children}</p>
-      </div>
-    </div>
-  );
-}
-
-function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
+function WelcomeScreen({ onStart, onStartRunning, historyCount, onViewHistory }) {
   // h-screen (pas min-h-screen comme Shell) : contenu plus long qu'un écran, le bouton
   // "Commencer" doit rester ancré en bas et visible sans avoir à tout faire défiler
   // d'abord — Shell est partagé par des écrans qui, eux, comptent sur min-h-screen.
@@ -322,6 +224,17 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
           >
             Commencer le bilan <ArrowRight className="w-4 h-4" />
           </button>
+          {/* Second parcours (analyse de foulée). Volontairement un bouton secondaire et non un
+              sélecteur de sport en haut d'écran : tout ce qui précède décrit le protocole VÉLO
+              (déroulé, matériel, sources) et ne vaut pas pour la course, qui a son propre écran
+              d'introduction avec son propre protocole. Mettre les deux sur le même plan ici
+              laisserait croire que cette page décrit les deux. */}
+          <button
+            onClick={onStartRunning}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold"
+          >
+            <Footprints className="w-4 h-4" /> Analyser ma foulée (course à pied)
+          </button>
           {historyCount > 0 && (
             <button
               onClick={onViewHistory}
@@ -332,29 +245,6 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function NumberField({ label, value, onChange, suffix, required, hint }) {
-  return (
-    <div>
-      <label className="flex items-center justify-between gap-3 text-sm text-text">
-        <span>
-          {label}
-          {required && <span className="text-gold"> *</span>}
-        </span>
-        <span className="flex items-center gap-2">
-          <input
-            type="number"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="w-24 bg-surface-2 border border-border rounded px-2 py-1.5 text-text text-right focus:outline-none focus:ring-2 focus:ring-gold"
-          />
-          {suffix && <span className="text-xs text-text-faint w-6">{suffix}</span>}
-        </span>
-      </label>
-      {hint && <p className="text-xs text-text-faint mt-1 pr-16 leading-relaxed">{hint}</p>}
     </div>
   );
 }
@@ -1780,10 +1670,16 @@ export default function App() {
       return (
         <WelcomeScreen
           onStart={() => setStage('aslr-capture')}
+          onStartRunning={() => setStage('running')}
           historyCount={history.length}
           onViewHistory={() => setStage('history')}
         />
       );
+    // Parcours course : entièrement autonome (son propre état, sa propre clé de persistance,
+    // son propre moteur). App.jsx ne fait que le monter — aucune donnée de session vélo n'est
+    // partagée, les deux sports n'ayant ni les mêmes essais ni le même profil athlète.
+    case 'running':
+      return <RunningSession onExit={() => setStage('welcome')} />;
     case 'history':
       return (
         <HistoryScreen

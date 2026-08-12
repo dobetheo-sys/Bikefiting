@@ -8,6 +8,7 @@ import {
   buildManualTrialAngles,
   KNEE_STRAIGHT_THRESHOLD,
 } from '../capture/capture-processing';
+import { computeRunContact, describeFootStrike } from '../capture/running-capture-processing';
 
 // posture-capture-flow.jsx
 // Flux de capture réel (caméra du téléphone) pour les entrées du pipeline §2 du spec :
@@ -74,16 +75,28 @@ const MODES = {
       'Lève la jambe le plus haut possible sans plier le genou — arrête-toi si ça tire ou fait mal',
     ],
   },
+  run_video: {
+    label: 'foulée sur tapis',
+    checklist: [
+      'Tapis de course, caméra fixe (support/trépied) placée sur le CÔTÉ, vue de profil',
+      'Caméra à hauteur de hanche et bien perpendiculaire au tapis — de biais, les angles sont faussés',
+      'Recul suffisant pour te voir de la tête aux pieds, chaussures entièrement visibles',
+      'Filme en mode paysage : plus de largeur, et tu restes cadré même si tu dérives un peu sur la courroie',
+      'Même vitesse de tapis que pour tes autres essais — un essai à une autre vitesse ne sera pas comparable et sera écarté',
+      'Cours au moins 20-30 secondes à allure stabilisée avant de lancer l’enregistrement',
+      'Tu choisiras ensuite une image où le pied touche le sol, pour y placer 6 points toi-même',
+    ],
+  },
 };
 
-const VIDEO_MODES = new Set(['profile_video', 'aslr_test']);
+const VIDEO_MODES = new Set(['profile_video', 'aslr_test', 'run_video']);
 
 // Import-first pour les 3 modes, pas juste la vidéo : au départ seule la vidéo était
 // concernée (MediaRecorder capricieux), mais avoir la photo se comporter différemment
 // (caméra live d'emblée) sans raison visible pour l'utilisateur était incohérent — retour
 // d'audit ergonomique. La checklist reste utile à lire avant de dégainer l'appareil photo
 // natif, quel que soit le type de média.
-const IMPORT_FIRST_MODES = new Set(['profile_video', 'aslr_test', 'frontal_photo']);
+const IMPORT_FIRST_MODES = new Set(['profile_video', 'aslr_test', 'frontal_photo', 'run_video']);
 
 // Retour terrain : "il faut définir plus précisément les points d'articulations pour mieux
 // placer les repères" — pointLabels ('hanche', 'genou'...) ne disait pas OÙ exactement taper
@@ -98,6 +111,10 @@ const JOINT_POINT_HINTS = {
   hanche: 'Grand trochanter : la bosse osseuse sur le côté de la hanche, sous la ceinture — pas le pli du short.',
   genou: "Épicondyle latéral du fémur : la bosse osseuse sur le côté extérieur du genou, à hauteur de l'articulation.",
   cheville: 'Malléole latérale : la bosse osseuse sur le côté extérieur de la cheville.',
+  // Course : repères de chaussure et non repères osseux — c'est l'orientation du PIED au sol
+  // qui est mesurée ici (angle d'attaque), pas un axe articulaire.
+  talon: "L'arrière de la chaussure, au point le plus bas — là où le talon touche ou touchera le sol.",
+  'pointe du pied': "L'extrémité avant de la chaussure. Ces deux points donnent aussi le sens dans lequel tu cours.",
 };
 
 function withJointHints(pointLabels) {
@@ -138,6 +155,22 @@ const MANUAL_MEASURE_STEPS = {
       compute: (pts) => computeManualTrialPmb(pts[0], pts[1], pts[2]),
     },
   ],
+  // Une seule étape, contrairement à la vidéo vélo qui en a deux : sur un cycle de pédalage les
+  // valeurs qui comptent sont réparties entre le point haut et le point bas, alors qu'en course
+  // tout ce que le moteur regarde se lit sur la MÊME image, celle de l'attaque du pied (cf.
+  // docs/SPEC_MOTEUR_COURSE.md §2B). En demander deux ajouterait du travail à l'utilisateur sans
+  // ajouter une seule mesure.
+  run_video: [
+    {
+      key: 'contact',
+      frameInstruction:
+        "Trouve l'image où ton pied vient de toucher le tapis (le premier contact, avant que le poids ne passe dessus).",
+      pickButtonLabel: 'Choisir cette image (attaque du pied)',
+      pointLabels: ['épaule', 'hanche', 'genou', 'cheville', 'talon', 'pointe du pied'],
+      pointHints: withJointHints(['épaule', 'hanche', 'genou', 'cheville', 'talon', 'pointe du pied']),
+      compute: (pts) => computeRunContact({ shoulder: pts[0], hip: pts[1], knee: pts[2], ankle: pts[3], heel: pts[4], toe: pts[5] }),
+    },
+  ],
 };
 
 // Assemble le résultat final envoyé à onCaptured à partir des résultats de chaque étape
@@ -145,6 +178,9 @@ const MANUAL_MEASURE_STEPS = {
 const MANUAL_MEASURE_FINALIZE = {
   aslr_test: (results) => ({ angle: results[0].angle, kneeAngle: results[0].kneeAngle }),
   profile_video: (results) => ({ angles: buildManualTrialAngles(results[0], results[1]) }),
+  // La cadence n'est pas mesurable sur une image fixe : elle est saisie à part, dans le parcours
+  // course (RunningSession.jsx), puis assemblée avec ce contact via buildRunTrialMetrics.
+  run_video: (results) => ({ contact: results[0] }),
 };
 
 // Pas de défilement fin (screen 'review') — approximation à 30 im/s, suffisant pour naviguer
@@ -1341,10 +1377,18 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 dernier point posé, agrandit le pied de page, et fait sauter visuellement l'image
                 (et tous les points déjà posés) juste au-dessus. Même famille de bug que le hint
                 d'en-tête plus haut. */}
-            <div className="rounded-card border border-border bg-surface p-3 space-y-1 min-h-[4.5rem]">
+            <div className={`rounded-card border border-border bg-surface p-3 space-y-1 ${currentMeasureStep.key === 'contact' ? 'min-h-[7.5rem]' : 'min-h-[4.5rem]'}`}>
               {measureResultInvalid && (
                 <p className="text-xs text-danger leading-relaxed">
-                  Deux points tapés sont au même endroit (ou presque) — le calcul d'angle n'est pas possible. Glisse-les pour les écarter, ou recommence.
+                  {/* Le mode course a un second cas d'échec, distinct de deux points confondus :
+                      talon et pointe tapés à la même abscisse rendent le SENS DE COURSE
+                      indéterminable (computeRunContact -> forwardSign null), et sans lui on ne
+                      peut pas distinguer un pied posé devant du même angle posé derrière — la
+                      mesure la plus importante du moteur. Message dédié : envoyer l'utilisateur
+                      "écarter deux points au même endroit" ne l'aiderait pas à trouver lesquels. */}
+                  {rawMeasureResult?.forwardSign === null
+                    ? "Talon et pointe du pied sont à la verticale l'un de l'autre : impossible de savoir dans quel sens tu cours, donc de dire si ton pied se pose devant ou derrière. Replace ces deux points le long de la chaussure, bien écartés horizontalement."
+                    : "Deux points tapés sont au même endroit (ou presque) — le calcul d'angle n'est pas possible. Glisse-les pour les écarter, ou recommence."}
                 </p>
               )}
               {measureResult && (
@@ -1375,6 +1419,26 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                   <div className="font-display text-4xl text-cyan">
                     Genou {measureResult.kneeAngle}°
                   </div>
+                )}
+                {currentMeasureStep.key === 'contact' && (
+                  <>
+                    {/* Le tibia est mis en avant parce que c'est la mesure la plus lisible du
+                        défaut le plus coûteux (pied posé trop devant). Le signe compte : négatif
+                        = pied posé en arrière du genou, ce qui est bon, d'où le libellé explicite
+                        plutôt qu'un nombre signé brut que personne n'interpréterait. */}
+                    <div className="font-display text-4xl text-cyan">
+                      Tibia {measureResult.tibiaAngleDeg}°
+                    </div>
+                    <div className="text-xs text-text-faint">
+                      {measureResult.tibiaAngleDeg > 0 ? 'pied posé devant le genou' : 'pied posé sous ou derrière le genou'}
+                    </div>
+                    <div className="text-sm font-mono text-text-dim">
+                      Genou {measureResult.kneeFlexionICDeg}° de flexion · Tronc {measureResult.trunkLeanDeg}°
+                    </div>
+                    <div className="text-sm font-mono text-text-dim">
+                      Overstriding {measureResult.overstrideRatio} · Attaque {describeFootStrike(measureResult.footStrikeAngleDeg)}
+                    </div>
+                  </>
                 )}
                 </>
               )}

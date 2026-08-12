@@ -7,9 +7,9 @@ handoff structuré pour Claude Code, tests réels avant de considérer une briqu
 **Statut : V1, position aéro uniquement.** Le module position guidon n'est pas commencé
 (réutilisera ce pipeline, cf. `docs/SPEC_POSTURE_AERO_MOTEUR.md` §10).
 
-Un **second moteur, analyse de foulée (course à pied)**, partage désormais le même pipeline de
-capture et les mêmes briques de scoring — moteur et couche de mesure faits et testés, aucune UI
-branchée. Voir `docs/SPEC_MOTEUR_COURSE.md`.
+Un **second parcours, analyse de foulée (course à pied)**, partage le même flux de capture et
+les mêmes briques de scoring — V1 complète, accessible depuis l'écran d'accueil. Voir
+`docs/SPEC_MOTEUR_COURSE.md`.
 
 ## Ce qui est fait et testé
 
@@ -24,7 +24,7 @@ branchée. Voir `docs/SPEC_MOTEUR_COURSE.md`.
 | Test ASLR (souplesse hanche) | `src/capture/capture-processing.ts` (`extractAslrAngle`) | Testé (angle cuisse au point d'arrêt = genou qui plie, coordonnées construites à la main) |
 | App (session complète : ASLR → profil → essais → `runEngine`) | `src/App.jsx` | Build de prod OK. Flux vérifié dans un vrai Chromium headless (caméra simulée) jusqu'à l'écran d'analyse ASLR inclus (checklist, enregistrement, bouton Valider, écran de chargement, retry) — le déclenchement réel de l'inférence (`ImageSegmenter.segment()` / `PoseLandmarker.detectForVideo()`) reste bloqué par la limite d'environnement ci-dessous |
 
-### Moteur course à pied (V1, sans UI)
+### Parcours course à pied (V1)
 
 | Brique | Fichier | Testé comment |
 |---|---|---|
@@ -32,10 +32,14 @@ branchée. Voir `docs/SPEC_MOTEUR_COURSE.md`.
 | Mesure course (6 taps → angles, cadence, oscillation verticale) | `src/capture/running-capture-processing.ts` | Géométrie vérifiée à la main, dont l'invariance au sens de filmage (même geste filmé des deux côtés = mêmes chiffres) |
 | Cadence automatique depuis les landmarks | `src/capture/running-capture-processing.ts` (`estimateCadenceFromFrames`) | Signal synthétique : 180 pas/min mesurés sur une vérité terrain de 180, garde-fou Nyquist testé. **Non validé sur appareil réel** |
 | Primitives partagées vélo/course | `src/shared/geometry.ts`, `src/shared/analysis.ts` | Extraites de `capture-processing.ts`/`posture-aero-engine.ts` sans changement de comportement (tests vélo inchangés et toujours verts) |
+| Mode de capture course (6 taps sur l'image d'attaque) | `src/components/PostureCaptureFlow.jsx` (`run_video`) | **Exécuté dans un vrai Chromium** jusqu'à l'écran de capture |
+| Parcours complet (intro → profil → essais → résultats) | `src/components/RunningSession.jsx` | **Exécuté dans un vrai Chromium** de bout en bout : saisie de cadence dans ses deux modes, enregistrement d'essai, écran de résultats sur une session pré-remplie (scores conformes au moteur, essai hors vitesse écarté avec son motif) |
+| Primitives d'écran partagées | `src/components/ui.jsx` | Extraites d'`App.jsx` sans changement visuel |
 
-Ce que ce moteur **ne fait pas** : aucune UI, rien n'est branché dans `App.jsx`. Il est utilisable
-comme bibliothèque, pas depuis l'application. Limites du protocole (tapis uniquement, scores
-relatifs à la session, pas de prédiction de blessure) détaillées au §8 de son spec.
+**Reste à confronter au terrain** : la mesure sur une vraie vidéo de course (choix de l'image
+d'attaque, précision des 6 taps) — c'est là que le parcours vélo avait révélé ses vrais
+problèmes. Limites du protocole (tapis uniquement, scores relatifs à la session, pas de
+prédiction de blessure) détaillées au §8 de son spec.
 
 `npm test` fait tourner tous les tests. `npm run typecheck` type-checke tout `src/`.
 `npm run dev` / `npm run build` lancent l'app (shell Vite + Tailwind posé sur `PostureCaptureFlow.jsx`).
@@ -106,7 +110,9 @@ src/
     mediapipe-vision.ts          # fileset WASM partagé (navigateur uniquement)
     video-frame-sampler.ts       # échantillonne une vidéo capturée pour l'inférence pose
   components/
+    ui.jsx                       # primitives d'écran partagées vélo/course
     PostureCaptureFlow.jsx       # UI de capture caméra (React), vérifiée en Chromium headless
+    RunningSession.jsx           # parcours course complet (intro -> profil -> essais -> résultats)
 ```
 
 ## Développement

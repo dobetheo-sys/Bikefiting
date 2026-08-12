@@ -1,6 +1,6 @@
 # SPEC — Moteur d'analyse de foulée (course à pied)
 
-**Statut** : V1 — moteur + couche de mesure faits et testés, aucune UI branchée
+**Statut** : V1 complète — moteur, mesure et parcours utilisateur faits et vérifiés en navigateur
 **Portée** : protocole tapis de course uniquement. Course en extérieur = module séparé (§10).
 **Projet parent** : `posture-aero` (moteur position vélo). Ce moteur réutilise le même pipeline
 de capture et les mêmes briques de scoring, cf. `src/shared/`.
@@ -230,15 +230,24 @@ Ce n'est pas codé en dur : c'est ce que le calcul retourne.
 | Moteur (validation, 2 scores, Pareto, suggestion) | `src/engine/running-gait-engine.ts` | `running-gait-engine.test.ts` |
 | Mesure (taps → métriques, cadence, oscillation) | `src/capture/running-capture-processing.ts` | `running-capture-processing.test.ts` |
 | Primitives partagées avec le vélo | `src/shared/geometry.ts`, `src/shared/analysis.ts` | via les tests des deux moteurs |
+| Mode de capture `run_video` (6 taps sur l'image d'attaque) | `src/components/PostureCaptureFlow.jsx` | Piloté dans un vrai Chromium jusqu'à l'écran de capture |
+| Parcours complet (intro → profil → essais → résultats) | `src/components/RunningSession.jsx` | Piloté dans un vrai Chromium de bout en bout, y compris l'écran de résultats sur une session pré-remplie |
 
-**Pas encore fait** : aucune UI. Rien n'est branché dans `App.jsx` — le moteur est utilisable en
-tant que bibliothèque, pas depuis l'application.
+**Ce qui reste non vérifié sur appareil réel** : la mesure elle-même sur une vraie vidéo de
+course (choix de l'image d'attaque, précision des 6 taps). C'est le point à confronter au
+terrain en premier — c'est là que le parcours vélo avait révélé ses vrais problèmes.
 
 ---
 
 ## 10. Hors scope V1, explicitement reporté
 
-- **UI de capture course** (choix de l'image d'attaque, 6 taps, métronome, saisie des appuis)
+- **Métronome intégré.** L'app donne la cadence cible en pas/min, l'athlète utilise une appli
+  de métronome. Un métronome maison ajouterait une surface de bug (Web Audio, autoplay bloqué,
+  dérive du timing en arrière-plan) pour remplacer quelque chose qui existe déjà et marche.
+- **Cadence automatique branchée dans l'UI.** `estimateCadenceFromFrames` existe et est testée,
+  mais la saisie reste manuelle : tant que l'estimateur n'a pas été confronté au comptage manuel
+  sur de vraies vidéos, l'afficher comme une mesure fiable serait prématuré.
+- **Historique et tendance entre sessions** (le parcours vélo les a, la course non)
 - **Course en extérieur.** Le sujet traverse le cadre, donc la perspective change pendant le
   passage — les angles mesurés en bord de cadre sont faussés par la parallaxe. Exploitable
   seulement en ne retenant que les appuis proches du centre de l'image, soit 1 à 2 appuis par
