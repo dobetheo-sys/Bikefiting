@@ -1074,27 +1074,24 @@ function formatSessionDate(iso) {
 function HistoryCard({ entry, feedbackCount, onOpen, onDelete, onOpenFeedback }) {
   const nbTrials = entry.trials?.length ?? 0;
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-      <button
-        onClick={() => onOpen(entry)}
-        className="w-full text-left focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
-      >
-        <div className="text-sm text-neutral-100 font-medium">{formatSessionDate(entry.archivedAt)}</div>
-        <div className="text-xs text-neutral-500 mt-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+    <div className="rounded-card border border-border bg-surface p-4">
+      <button onClick={() => onOpen(entry)} className="w-full text-left focus:outline-none focus:ring-2 focus:ring-gold rounded">
+        <div className="text-sm text-text font-medium">{formatSessionDate(entry.archivedAt)}</div>
+        <div className="text-xs text-text-faint mt-1 font-mono">
           {nbTrials} essai{nbTrials > 1 ? 's' : ''} · objectif {entry.profile?.goal === 'comfort' ? 'confort' : 'aéro'} · souplesse{' '}
           {entry.profile?.hipFlexibilityScore ?? '?'}/5
         </div>
       </button>
-      <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-neutral-800">
+      <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-border">
         <button
           onClick={() => onOpenFeedback(entry)}
-          className="text-xs text-cyan-300 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded px-1"
+          className="text-xs text-cyan underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan rounded px-1"
         >
           Retour post-sortie{feedbackCount > 0 ? ` (${feedbackCount})` : ''}
         </button>
         <button
           onClick={() => { if (confirm('Supprimer ce bilan de l’historique ?')) onDelete(entry.id); }}
-          className="text-xs text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+          className="text-xs text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded px-1"
         >
           Supprimer
         </button>
@@ -1110,26 +1107,26 @@ function HistoryScreen({ history, feedbackLog, onOpen, onDelete, onOpenFeedback,
   return (
     <ScreenShell
       eyebrow="Historique"
-      eyebrowColor="text-cyan-400"
+      eyebrowColor="text-cyan"
       title="Tes bilans précédents"
       footer={
         <>
           {sorted.length > 0 && (
             <button
               onClick={onViewTrend}
-              className="w-full py-3 rounded-lg border border-cyan-400/40 text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+              className="w-full py-3 rounded-control border border-cyan/40 text-cyan focus:outline-none focus:ring-2 focus:ring-cyan"
             >
               Voir la tendance
             </button>
           )}
-          <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+          <button onClick={onBack} className="w-full py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold">
             Retour
           </button>
         </>
       }
     >
       {sorted.length === 0 ? (
-        <p className="text-neutral-400 text-sm my-6">Aucun bilan archivé pour l'instant.</p>
+        <p className="text-text-dim text-sm my-6">Aucun bilan archivé pour l'instant.</p>
       ) : (
         <div className="space-y-3 my-4">
           {sorted.map((entry) => (
@@ -1214,8 +1211,8 @@ function TrendChart({ title, unit, decimals, seriesList, dates }) {
   };
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3">
-      <div className="text-xs text-neutral-300 mb-2">{title}</div>
+    <div className="rounded-card border border-border bg-surface p-3">
+      <div className="text-xs text-text-dim mb-2">{title}</div>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${TREND_CHART_W} ${TREND_CHART_H}`}
@@ -1229,7 +1226,7 @@ function TrendChart({ title, unit, decimals, seriesList, dates }) {
           y1={TREND_CHART_H - TREND_PAD_Y}
           x2={TREND_CHART_W - TREND_PAD_X}
           y2={TREND_CHART_H - TREND_PAD_Y}
-          stroke="#292524"
+          stroke="var(--color-border)"
           strokeWidth="1"
         />
         {seriesList.map((s) => (
@@ -1249,7 +1246,7 @@ function TrendChart({ title, unit, decimals, seriesList, dates }) {
             y1={TREND_PAD_Y / 2}
             x2={xAt(hoverI)}
             y2={TREND_CHART_H - TREND_PAD_Y / 2}
-            stroke="#525252"
+            stroke="var(--color-text-faint)"
             strokeWidth="1"
             strokeDasharray="2,2"
           />
@@ -1261,21 +1258,21 @@ function TrendChart({ title, unit, decimals, seriesList, dates }) {
               cx={xAt(i)}
               cy={yAt(v)}
               r={hoverI === i ? 4.5 : 3}
-              fill={hoverI === i ? s.color : '#171717'}
+              fill={hoverI === i ? s.color : 'var(--color-surface)'}
               stroke={s.color}
               strokeWidth="2"
             />
           ))
         )}
       </svg>
-      <div className="flex justify-between text-[10px] text-neutral-500 mt-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+      <div className="flex justify-between text-[10px] text-text-faint mt-1 font-mono">
         <span>{formatSessionDateShort(dates[0])}</span>
         {n > 1 && <span>{formatSessionDateShort(dates[n - 1])}</span>}
       </div>
-      <div className="text-xs mt-1.5 h-4" style={{ fontFamily: 'ui-monospace, monospace' }}>
+      <div className="text-xs mt-1.5 h-4 font-mono">
         {hoverI !== null && (
           <>
-            <span className="text-neutral-500">{formatSessionDateShort(dates[hoverI])} · </span>
+            <span className="text-text-faint">{formatSessionDateShort(dates[hoverI])} · </span>
             {seriesList.map((s) => (
               <span key={s.key} className="mr-3" style={{ color: s.color }}>
                 {s.values[hoverI].toFixed(decimals)}
@@ -1307,16 +1304,16 @@ function TrendScreen({ history, weights, onBack }) {
   return (
     <ScreenShell
       eyebrow="Tendance"
-      eyebrowColor="text-cyan-400"
+      eyebrowColor="text-cyan"
       title="Évolution entre tes bilans"
       footer={
-        <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+        <button onClick={onBack} className="w-full py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold">
           Retour à l'historique
         </button>
       }
     >
       {points.length < 2 ? (
-        <p className="text-neutral-400 text-sm my-6 leading-relaxed">
+        <p className="text-text-dim text-sm my-6 leading-relaxed">
           Pas encore assez de bilans avec résultats pour voir une tendance — il en faut au moins 2 (avec au moins 3 essais valides chacun).
         </p>
       ) : (
@@ -1325,8 +1322,8 @@ function TrendScreen({ history, weights, onBack }) {
             <button
               type="button"
               onClick={() => setMode('equilibre')}
-              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
-                mode === 'equilibre' ? 'bg-cyan-400 border-cyan-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan ${
+                mode === 'equilibre' ? 'bg-cyan border-cyan text-ink font-semibold' : 'border-border text-text-dim'
               }`}
             >
               Équilibré
@@ -1334,8 +1331,8 @@ function TrendScreen({ history, weights, onBack }) {
             <button
               type="button"
               onClick={() => setMode('profiles')}
-              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
-                mode === 'profiles' ? 'bg-cyan-400 border-cyan-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan ${
+                mode === 'profiles' ? 'bg-cyan border-cyan text-ink font-semibold' : 'border-border text-text-dim'
               }`}
             >
               Les 3 profils
@@ -1345,7 +1342,7 @@ function TrendScreen({ history, weights, onBack }) {
           {mode === 'profiles' && (
             <div className="flex gap-4 mb-4">
               {PROFILE_SERIES.map((s) => (
-                <div key={s.key} className="flex items-center gap-1.5 text-xs text-neutral-400">
+                <div key={s.key} className="flex items-center gap-1.5 text-xs text-text-faint">
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.color }} />
                   {s.label}
                 </div>
@@ -1370,7 +1367,7 @@ function TrendScreen({ history, weights, onBack }) {
           </div>
 
           {excludedCount > 0 && (
-            <p className="text-xs text-neutral-500 mb-4">
+            <p className="text-xs text-text-faint mb-4">
               {excludedCount} bilan{excludedCount > 1 ? 's' : ''} archivé{excludedCount > 1 ? 's' : ''} sans assez d'essais valides, non inclus.
             </p>
           )}
@@ -1394,10 +1391,10 @@ function FeedbackForm({ sessionEntry, onSubmit, onCancel }) {
   return (
     <ScreenShell
       eyebrow="Retour post-sortie"
-      eyebrowColor="text-cyan-400"
+      eyebrowColor="text-cyan"
       title="Comment ça s'est passé ?"
       subtitle={
-        <p className="text-neutral-400 text-sm mb-6 leading-relaxed">
+        <p className="text-text-dim text-sm mb-6 leading-relaxed">
           Sur le réglage du bilan du {formatSessionDate(sessionEntry.archivedAt)}. Une douleur qui revient sur 2 sorties de suite pèsera un
           peu plus dans le score confort de ton prochain bilan — 1 sortie isolée ne change rien.
         </p>
@@ -1406,13 +1403,13 @@ function FeedbackForm({ sessionEntry, onSubmit, onCancel }) {
         <>
           <button
             onClick={() => onSubmit(FEEDBACK_ZONES.map((z) => ({ zone: z.key, painScore: scores[z.key] })))}
-            className="w-full py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-cyan-200"
+            className="w-full py-3 rounded-control bg-cyan text-ink font-semibold focus:outline-none focus:ring-2 focus:ring-gold"
           >
             Enregistrer cette sortie
           </button>
           <button
             onClick={onCancel}
-            className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+            className="w-full text-xs text-text-dim underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded"
           >
             Annuler
           </button>
@@ -1422,23 +1419,22 @@ function FeedbackForm({ sessionEntry, onSubmit, onCancel }) {
       <div className="space-y-5 mt-4">
         {FEEDBACK_ZONES.map((z) => (
           <div key={z.key}>
-            <div className="text-sm text-neutral-200 mb-1.5">{z.label}</div>
+            <div className="text-sm text-text mb-1.5">{z.label}</div>
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((n) => (
                 <button
                   key={n}
                   type="button"
                   onClick={() => setScores((prev) => ({ ...prev, [z.key]: n }))}
-                  className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
-                    scores[z.key] === n ? 'bg-cyan-400 border-cyan-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+                  className={`flex-1 py-2 rounded-control border text-sm font-mono transition-colors focus:outline-none focus:ring-2 focus:ring-cyan ${
+                    scores[z.key] === n ? 'bg-cyan border-cyan text-ink font-semibold' : 'border-border text-text-dim'
                   }`}
-                  style={{ fontFamily: 'ui-monospace, monospace' }}
                 >
                   {n}
                 </button>
               ))}
             </div>
-            <div className="flex justify-between text-[10px] text-neutral-500 mt-1">
+            <div className="flex justify-between text-[10px] text-text-faint mt-1">
               <span>aucune douleur</span>
               <span>intense</span>
             </div>
