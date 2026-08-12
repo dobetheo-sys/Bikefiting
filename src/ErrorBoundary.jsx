@@ -38,16 +38,16 @@ export class AppErrorBoundary extends Component {
   render() {
     if (!this.state.crashed) return this.props.children;
     return (
-      <div className="w-full h-full min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center px-6 text-center">
-        <AlertTriangle className="w-8 h-8 text-amber-400 mb-3" />
+      <div className="w-full h-full min-h-screen bg-bg text-text font-sans flex flex-col items-center justify-center px-6 text-center">
+        <AlertTriangle className="w-8 h-8 text-gold mb-3" />
         <h1 className="text-lg font-semibold mb-2">Un problème inattendu est survenu</h1>
-        <p className="text-neutral-400 text-sm max-w-xs mb-6">
+        <p className="text-text-dim text-sm max-w-xs mb-6">
           Les données de ta session précédente semblent corrompues ou incompatibles avec cette version de l'appli. Tu peux
           repartir de zéro — tes essais déjà enregistrés seront perdus.
         </p>
         <button
           onClick={this.handleReset}
-          className="flex items-center justify-center gap-2 py-3 px-6 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200"
+          className="flex items-center justify-center gap-2 py-3 px-6 rounded-control bg-gold text-ink font-semibold focus:outline-none focus:ring-2 focus:ring-cyan"
         >
           <RotateCcw className="w-4 h-4" /> Effacer la session et redémarrer
         </button>
