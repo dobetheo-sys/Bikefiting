@@ -6,7 +6,7 @@ import { Lock } from 'lucide-react';
 // Composant partagé unique, utilisé aux deux endroits.
 export default function PrivacyNote({ className = '' }) {
   return (
-    <div className={`flex items-start gap-2 text-xs text-neutral-500 ${className}`}>
+    <div className={`flex items-start gap-2 text-xs font-sans text-text-faint ${className}`}>
       <Lock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
       <span>Traité entièrement sur ton téléphone — aucune vidéo ni photo n’est envoyée en ligne.</span>
     </div>

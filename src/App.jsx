@@ -131,14 +131,7 @@ async function processFrontalPhoto(blob, calibration) {
 }
 
 function Shell({ children }) {
-  return (
-    <div
-      className="w-full h-full min-h-screen bg-neutral-950 text-neutral-100 flex flex-col"
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
-    >
-      {children}
-    </div>
-  );
+  return <div className="w-full h-full min-h-screen bg-bg text-text font-sans flex flex-col">{children}</div>;
 }
 
 function Busy({ label, progress }) {
@@ -146,12 +139,12 @@ function Busy({ label, progress }) {
   return (
     <Shell>
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center max-w-xs mx-auto w-full">
-        <Loader2 className="w-6 h-6 text-amber-400 animate-spin mb-4" />
-        <p className="text-sm text-neutral-300 mb-4">{label}</p>
+        <Loader2 className="w-6 h-6 text-gold animate-spin mb-4" />
+        <p className="text-sm text-text-dim mb-4">{label}</p>
         {pct !== null && (
           <>
             <ProgressBar value={progress.current} max={progress.total} />
-            <p className="text-xs text-neutral-500 mt-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
+            <p className="text-xs text-text-faint font-mono mt-2">
               {progress.current}/{progress.total} images analysées · {pct}%
             </p>
           </>
@@ -165,12 +158,12 @@ function ErrorScreen({ message, onRetry }) {
   return (
     <Shell>
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center max-w-md mx-auto w-full">
-        <AlertTriangle className="w-8 h-8 text-amber-400 mb-3" />
-        <p className="text-neutral-200 text-sm">{message}</p>
-        <p className="text-xs text-neutral-500 mt-2">Pas de souci, ce que tu as déjà rempli est conservé.</p>
+        <AlertTriangle className="w-8 h-8 text-gold mb-3" />
+        <p className="text-text text-sm">{message}</p>
+        <p className="text-xs text-text-faint mt-2">Pas de souci, ce que tu as déjà rempli est conservé.</p>
         <button
           onClick={onRetry}
-          className="mt-6 flex items-center gap-2 py-3 px-5 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          className="mt-6 flex items-center gap-2 py-3 px-5 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold"
         >
           <RotateCcw className="w-4 h-4" /> Réessayer
         </button>
@@ -182,8 +175,8 @@ function ErrorScreen({ message, onRetry }) {
 function ProgressBar({ value, max }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (
-    <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden">
-      <div className="h-full bg-amber-400 transition-[width] duration-300" style={{ width: `${pct}%` }} />
+    <div className="w-full h-1.5 rounded-full bg-surface-3 overflow-hidden">
+      <div className="h-full bg-gold transition-[width] duration-300" style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -194,26 +187,24 @@ function ProgressBar({ value, max }) {
 // bas) plutôt que Shell/min-h-screen + centrage vertical, pour que le bouton principal
 // reste toujours atteignable sans avoir à scroller d'abord (retour d'audit ergonomique :
 // "CTA ancré en bas partout").
-function ScreenShell({ eyebrow, eyebrowColor = 'text-amber-400', title, subtitle, children, footer }) {
+//
+// Restyle Zenna : le h1 générique reste en Inter (font-sans), pas en Bebas Neue — ce slot
+// accueille aussi bien des titres courts ("Résultat") que des phrases longues ("Quelles
+// sont les mesures actuelles du vélo ?"), et Bebas Neue (police display condensée) casse
+// la lisibilité sur du texte long. Réservé aux vrais titres héros courts, au cas par cas.
+function ScreenShell({ eyebrow, eyebrowColor = 'text-gold', title, subtitle, children, footer }) {
   return (
-    <div
-      className="w-full h-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden"
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
-    >
+    <div className="w-full h-screen bg-bg text-text font-sans flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto">
         <div className="px-6 pt-10 pb-8 max-w-md mx-auto w-full">
-          {eyebrow && (
-            <div className={`text-xs tracking-widest uppercase mb-2 ${eyebrowColor}`} style={{ fontFamily: 'ui-monospace, monospace' }}>
-              {eyebrow}
-            </div>
-          )}
+          {eyebrow && <div className={`text-xs tracking-widest uppercase mb-2 font-mono ${eyebrowColor}`}>{eyebrow}</div>}
           {title && <h1 className="text-xl font-semibold mb-1">{title}</h1>}
           {subtitle}
           {children}
         </div>
       </div>
       {footer && (
-        <div className="px-6 py-5 border-t border-neutral-800 bg-neutral-950">
+        <div className="px-6 py-5 border-t border-border bg-bg">
           <div className="max-w-md mx-auto w-full space-y-3">{footer}</div>
         </div>
       )}
@@ -223,21 +214,16 @@ function ScreenShell({ eyebrow, eyebrowColor = 'text-amber-400', title, subtitle
 
 function StepCard({ icon: Icon, step, title, duration, children, accent }) {
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 flex gap-4">
-      <div
-        className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold ${accent}`}
-        style={{ fontFamily: 'ui-monospace, monospace' }}
-      >
-        {step}
-      </div>
+    <div className="rounded-card border border-border bg-surface p-4 flex gap-4">
+      <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold font-mono ${accent}`}>{step}</div>
       <div className="min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <Icon className="w-4 h-4 text-neutral-400 shrink-0" />
-          <h3 className="font-medium text-neutral-100">{title}</h3>
+          <Icon className="w-4 h-4 text-text-faint shrink-0" />
+          <h3 className="font-medium text-text">{title}</h3>
         </div>
-        <p className="text-sm text-neutral-400 leading-relaxed">{children}</p>
+        <p className="text-sm text-text-dim leading-relaxed">{children}</p>
         {duration && (
-          <div className="flex items-center gap-1.5 mt-2 text-xs text-neutral-400" style={{ fontFamily: 'ui-monospace, monospace' }}>
+          <div className="flex items-center gap-1.5 mt-2 text-xs text-text-faint font-mono">
             <Timer className="w-3 h-3" /> {duration}
           </div>
         )}
@@ -248,11 +234,11 @@ function StepCard({ icon: Icon, step, title, duration, children, accent }) {
 
 function GearItem({ icon: Icon, title, children }) {
   return (
-    <div className="flex gap-3 py-3 border-b border-neutral-800 last:border-b-0">
-      <Icon className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+    <div className="flex gap-3 py-3 border-b border-border last:border-b-0">
+      <Icon className="w-4 h-4 text-cyan shrink-0 mt-0.5" />
       <div className="min-w-0">
-        <div className="text-sm text-neutral-200">{title}</div>
-        <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{children}</p>
+        <div className="text-sm text-text">{title}</div>
+        <p className="text-xs text-text-faint mt-0.5 leading-relaxed">{children}</p>
       </div>
     </div>
   );
@@ -263,42 +249,36 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
   // "Commencer" doit rester ancré en bas et visible sans avoir à tout faire défiler
   // d'abord — Shell est partagé par des écrans qui, eux, comptent sur min-h-screen.
   return (
-    <div
-      className="w-full h-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden"
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
-    >
+    <div className="w-full h-screen bg-bg text-text font-sans flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto">
         <div className="px-6 pt-10 pb-8 max-w-md mx-auto w-full">
-          <div className="text-xs tracking-widest text-amber-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Bilan posture aéro
-          </div>
-          <h1 className="text-2xl font-semibold text-neutral-100 leading-snug mb-2">Avant de commencer</h1>
-          <p className="text-neutral-400 text-sm leading-relaxed mb-8">
+          <div className="text-xs tracking-widest text-gold uppercase mb-2 font-mono">Bilan posture aéro</div>
+          {/* Titre héros court (2 mots) : seul h1 de l'app à recevoir le traitement display
+              Zenna (Bebas Neue + léger skew) — cf. commentaire sur ScreenShell : les autres
+              titres accueillent des phrases trop longues pour cette police condensée. */}
+          <h1 className="font-display text-4xl -skew-x-[4deg] inline-block leading-snug mb-2">Avant de commencer</h1>
+          <p className="text-text-dim text-sm leading-relaxed mb-8">
             Compte 10-15 minutes, seul avec ton vélo et ton téléphone. Voici exactement ce qui va se passer et ce qu'il te faut.
           </p>
 
-          <h2 className="text-xs tracking-widest text-neutral-500 uppercase mb-3" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Le déroulé
-          </h2>
+          <h2 className="text-xs tracking-widest text-text-faint uppercase mb-3 font-mono">Le déroulé</h2>
           <div className="space-y-3 mb-8">
-            <StepCard icon={Ruler} step="1" title="Test de souplesse" duration="~1 min" accent="bg-cyan-400/10 text-cyan-300">
+            <StepCard icon={Ruler} step="1" title="Test de souplesse" duration="~1 min" accent="bg-cyan/10 text-cyan">
               Allongé au sol, tu lèves une jambe tendue le plus haut possible. Ça calibre la limite de fermeture de
               hanche que ta position sur le vélo doit respecter — sans ça, impossible de scorer tes essais.
             </StepCard>
-            <StepCard icon={Bike} step="2" title="Essais sur le vélo" duration="~2-3 min par essai" accent="bg-amber-400/10 text-amber-300">
+            <StepCard icon={Bike} step="2" title="Essais sur le vélo" duration="~2-3 min par essai" accent="bg-orange/10 text-orange-tint">
               Pour chaque réglage que tu veux comparer (hauteur de selle, reach, drop…) : une courte vidéo de profil
               en pédalant, puis une photo de face avec étalonnage. Répète pour au moins 3 essais différents.
             </StepCard>
-            <StepCard icon={CheckCircle2} step="3" title="Résultats" accent="bg-pink-400/10 text-pink-300">
+            <StepCard icon={CheckCircle2} step="3" title="Résultats" accent="bg-gold/10 text-gold">
               Un score confort et un score aéro pour chaque essai, et une sélection automatique de tes 3 meilleures
               positions : confort max, équilibré, aéro max.
             </StepCard>
           </div>
 
-          <h2 className="text-xs tracking-widest text-neutral-500 uppercase mb-3" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Matériel nécessaire
-          </h2>
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900 px-4 mb-8">
+          <h2 className="text-xs tracking-widest text-text-faint uppercase mb-3 font-mono">Matériel nécessaire</h2>
+          <div className="rounded-card border border-border bg-surface px-4 mb-8">
             <GearItem icon={Smartphone} title="Un smartphone avec appareil photo">
               Celui que tu utilises là, ça marche.
             </GearItem>
@@ -316,8 +296,8 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
             </GearItem>
           </div>
 
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-4 mb-4">
-            <p className="text-xs text-neutral-500 leading-relaxed">
+          <div className="rounded-card border border-border bg-surface/50 p-4 mb-4">
+            <p className="text-xs text-text-faint leading-relaxed">
               Méthode basée sur un protocole terrain publié (Debraux et al. 2009) pour la mesure de surface frontale,
               et sur le test clinique ASLR pour la souplesse de hanche — pas juste une estimation à l'œil.
             </p>
@@ -325,8 +305,8 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
 
           <PrivacyNote className="mb-4" />
 
-          <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-4 mb-8">
-            <p className="text-xs text-amber-200/80 leading-relaxed">
+          <div className="rounded-card border border-gold/20 bg-gold/5 p-4 mb-8">
+            <p className="text-xs text-gold/80 leading-relaxed">
               Cet outil ne remplace pas l'avis d'un bikefitter professionnel ni un avis médical. Arrête immédiatement
               un mouvement si ça tire ou fait mal, en particulier pendant le test de souplesse.
             </p>
@@ -334,18 +314,18 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
         </div>
       </div>
 
-      <div className="px-6 py-5 border-t border-neutral-800 bg-neutral-950">
+      <div className="px-6 py-5 border-t border-border bg-bg">
         <div className="max-w-md mx-auto w-full space-y-3">
           <button
             onClick={onStart}
-            className="w-full py-3.5 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200 flex items-center justify-center gap-2"
+            className="w-full py-3.5 rounded-control bg-gold text-ink font-semibold focus:outline-none focus:ring-2 focus:ring-cyan flex items-center justify-center gap-2"
           >
             Commencer le bilan <ArrowRight className="w-4 h-4" />
           </button>
           {historyCount > 0 && (
             <button
               onClick={onViewHistory}
-              className="w-full flex items-center justify-center gap-2 py-2 text-sm text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+              className="w-full flex items-center justify-center gap-2 py-2 text-sm text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded"
             >
               <History className="w-3.5 h-3.5" /> Voir {historyCount > 1 ? `mes ${historyCount} bilans précédents` : 'mon bilan précédent'}
             </button>
@@ -359,22 +339,22 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
 function NumberField({ label, value, onChange, suffix, required, hint }) {
   return (
     <div>
-      <label className="flex items-center justify-between gap-3 text-sm text-neutral-200">
+      <label className="flex items-center justify-between gap-3 text-sm text-text">
         <span>
           {label}
-          {required && <span className="text-amber-400"> *</span>}
+          {required && <span className="text-gold"> *</span>}
         </span>
         <span className="flex items-center gap-2">
           <input
             type="number"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="w-24 bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-neutral-100 text-right focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="w-24 bg-surface-2 border border-border rounded px-2 py-1.5 text-text text-right focus:outline-none focus:ring-2 focus:ring-gold"
           />
-          {suffix && <span className="text-xs text-neutral-500 w-6">{suffix}</span>}
+          {suffix && <span className="text-xs text-text-faint w-6">{suffix}</span>}
         </span>
       </label>
-      {hint && <p className="text-xs text-neutral-500 mt-1 pr-16 leading-relaxed">{hint}</p>}
+      {hint && <p className="text-xs text-text-faint mt-1 pr-16 leading-relaxed">{hint}</p>}
     </div>
   );
 }
@@ -391,7 +371,7 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
   return (
     <ScreenShell
       eyebrow="Test de souplesse (ASLR)"
-      eyebrowColor="text-cyan-400"
+      eyebrowColor="text-cyan"
       title="Résultat"
       footer={
         <>
@@ -405,28 +385,26 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
               )
             }
             disabled={!heightValid}
-            className="w-full py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan-200 flex items-center justify-center gap-2"
+            className="w-full py-3 rounded-control bg-cyan text-ink font-semibold disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gold flex items-center justify-center gap-2"
           >
             Continuer <ArrowRight className="w-4 h-4" />
           </button>
           <button
             onClick={onRetakeAslr}
-            className="w-full flex items-center justify-center gap-2 py-2 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded"
+            className="w-full flex items-center justify-center gap-2 py-2 text-sm text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan rounded"
           >
             <RotateCcw className="w-3.5 h-3.5" /> Refaire le test de souplesse
           </button>
         </>
       }
     >
-      <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 mb-6 mt-4">
-        <div className="text-3xl font-semibold text-cyan-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
-          {aslrAngle}°
-        </div>
-        <p className="text-xs text-neutral-500 mt-2">
+      <div className="rounded-card border border-border bg-surface p-4 mb-6 mt-4">
+        <div className="font-display text-5xl text-cyan">{aslrAngle}°</div>
+        <p className="text-xs text-text-faint mt-2">
           Score de souplesse : {flexScore}/5 (seuil clinique de tightness = 80°, cf. spec §3.1).
         </p>
         {aslrKneeAngle != null && (
-          <p className="text-xs text-neutral-500 mt-2">
+          <p className="text-xs text-text-faint mt-2">
             Genou mesuré à {aslrKneeAngle}° au moment de la levée
             {aslrKneeAngle < KNEE_STRAIGHT_THRESHOLD ? ' (un peu plié — si le résultat te semble faux, refais le test).' : ' (bien tendu).'}
           </p>
@@ -446,13 +424,13 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
       </div>
 
       <div className="mb-6">
-        <div className="text-sm text-neutral-200 mb-1.5">Objectif de la position</div>
+        <div className="text-sm text-text mb-1.5">Objectif de la position</div>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={() => setGoal('aero')}
-            className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
-              goal === 'aero' ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+            className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-gold ${
+              goal === 'aero' ? 'bg-gold border-gold text-ink font-semibold' : 'border-border text-text-dim'
             }`}
           >
             Aéro
@@ -460,14 +438,14 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
           <button
             type="button"
             onClick={() => setGoal('comfort')}
-            className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
-              goal === 'comfort' ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+            className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-gold ${
+              goal === 'comfort' ? 'bg-gold border-gold text-ink font-semibold' : 'border-border text-text-dim'
             }`}
           >
             Confort
           </button>
         </div>
-        <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
+        <p className="text-xs text-text-faint mt-1 leading-relaxed">
           {goal === 'aero'
             ? "Position TT/tri très couchée : tronc entre 5° et 15°, genou entre 137° et 150° restent des critères qui excluent un essai s'ils ne sont pas respectés (plage sourcée, cf. spec)."
             : "Position route classique, plus redressée et facile à régler : tronc et genou deviennent des repères informatifs plutôt que des critères d'exclusion (pas de plage \"confort\" universelle à imposer). La hanche (plancher 40°, perte de puissance mesurée) reste, elle, un critère dur dans les deux cas."}
@@ -475,14 +453,10 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
       </div>
 
       {referenceSaddleHeightCm && (
-        <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-6">
-          <div className="text-xs tracking-widest text-cyan-300 uppercase mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Hauteur de selle de référence
-          </div>
-          <div className="text-2xl font-semibold text-cyan-200" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            {referenceSaddleHeightCm} cm
-          </div>
-          <p className="text-xs text-cyan-100/70 mt-1 leading-relaxed">
+        <div className="rounded-card border border-cyan/20 bg-cyan/5 p-4 mb-6">
+          <div className="text-xs tracking-widest text-cyan uppercase mb-1 font-mono">Hauteur de selle de référence</div>
+          <div className="font-display text-4xl text-cyan">{referenceSaddleHeightCm} cm</div>
+          <p className="text-xs text-cyan/70 mt-1 leading-relaxed">
             Du pédalier au haut de la selle, le long du tube de selle (formule LeMond, entrejambe × 0,883). Un point de
             départ documenté si tu pars de zéro — pas une prescription, ajuste ensuite selon ton ressenti.
           </p>
@@ -507,14 +481,14 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
         <>
           <button
             onClick={onNewTrial}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold"
           >
             <Plus className="w-4 h-4" /> Nouvel essai
           </button>
           <button
             onClick={onAnalyze}
             disabled={trials.length === 0}
-            className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
+            className="w-full py-3 rounded-control bg-gold text-ink font-semibold disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan"
           >
             Voir les résultats
           </button>
@@ -530,26 +504,24 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
                   : 'Nouvelle session et repartir de zéro ?';
               if (confirm(msg)) onNewSession();
             }}
-            className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+            className="w-full text-xs text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded"
           >
             Nouvelle session
           </button>
         </>
       }
     >
-      <p className="text-neutral-400 text-sm mb-3">
+      <p className="text-text-dim text-sm mb-3">
         Souplesse {profile.hipFlexibilityScore}/5 · Objectif {profile.goal === 'comfort' ? 'confort' : 'aéro'}
       </p>
 
       {trials.length === 0 && referenceSaddleHeightCm && (
-        <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-6">
-          <div className="text-xs tracking-widest text-cyan-300 uppercase mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Avant ton premier essai
-          </div>
-          <p className="text-sm text-cyan-100">
+        <div className="rounded-card border border-cyan/20 bg-cyan/5 p-4 mb-6">
+          <div className="text-xs tracking-widest text-cyan uppercase mb-1 font-mono">Avant ton premier essai</div>
+          <p className="text-sm text-cyan">
             Hauteur de selle de référence suggérée : <span className="font-semibold">{referenceSaddleHeightCm} cm</span> (pédalier → haut de selle).
           </p>
-          <p className="text-xs text-cyan-100/70 mt-1">
+          <p className="text-xs text-cyan/70 mt-1">
             Utile si tu ne connais pas déjà ton réglage habituel — sinon, garde le tien comme point de départ.
           </p>
         </div>
@@ -558,52 +530,48 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
       <div className="mb-1">
         <ProgressBar value={trials.length} max={minTrials} />
       </div>
-      <p className="text-xs text-neutral-500 mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+      <p className="text-xs text-text-faint mb-1 font-mono">
         {trials.length}/{minTrials} essais
       </p>
-      <p className="text-neutral-500 text-xs mb-6">
+      <p className="text-text-faint text-xs mb-6">
         {remaining > 0
           ? `Encore ${remaining} essai${remaining > 1 ? 's' : ''} pour pouvoir comparer tes réglages et voir tes résultats.`
           : 'Tu peux déjà voir tes résultats — ajoute d’autres essais pour affiner la comparaison.'}
       </p>
 
-      <div className="rounded-lg border border-neutral-800 bg-neutral-900 divide-y divide-neutral-800 mb-6">
-        {trials.length === 0 && <p className="text-sm text-neutral-500 p-4">Aucun essai enregistré pour l’instant.</p>}
+      <div className="rounded-card border border-border bg-surface divide-y divide-border mb-6">
+        {trials.length === 0 && <p className="text-sm text-text-faint p-4">Aucun essai enregistré pour l’instant.</p>}
         {trials.map((t) => (
-          <div key={t.id} className="p-4 text-sm" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            <div className="text-neutral-200">{t.id}</div>
+          <div key={t.id} className="p-4 text-sm font-mono">
+            <div className="text-text">{t.id}</div>
             {/* Le genou est un critère d'exclusion dur au même titre que hanche/tronc (validateTrial,
                 cf. posture-aero-engine.ts) mais restait invisible ici — un essai pouvait être exclu
                 pour un genou hors plage sans que rien dans cette liste ne le laisse deviner. */}
-            <div className="text-xs text-neutral-500 mt-1">
+            <div className="text-xs text-text-faint mt-1">
               hanche {t.angles.hip.mean}° · tronc {t.angles.trunk.mean}° · genou {t.angles.knee.mean}° · pFSA {t.frontal.pFSA_cm2} cm²
             </div>
-            {t.deltas && <div className="text-xs text-amber-400/70 mt-1">{formatDeltas(t.deltas)}</div>}
+            {t.deltas && <div className="text-xs text-gold/70 mt-1">{formatDeltas(t.deltas)}</div>}
           </div>
         ))}
       </div>
 
       {lastTrial && (
-        <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-4 mb-6">
-          <div className="text-xs tracking-widest text-amber-300 uppercase mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Suggestion pour le prochain essai
-          </div>
+        <div className="rounded-card border border-gold/20 bg-gold/5 p-4 mb-6">
+          <div className="text-xs tracking-widest text-gold uppercase mb-1 font-mono">Suggestion pour le prochain essai</div>
           {nextAdjustment ? (
-            <p className="text-sm text-amber-100">{nextAdjustment.message}</p>
+            <p className="text-sm text-gold">{nextAdjustment.message}</p>
           ) : (
-            <p className="text-sm text-amber-100">
+            <p className="text-sm text-gold">
               Hanche, tronc et genou de {lastTrial.id} sont tous dans leur zone cible — rien à corriger côté angles pour l'instant.
             </p>
           )}
-          <p className="text-xs text-amber-100/60 mt-1.5">
+          <p className="text-xs text-gold/60 mt-1.5">
             Basé sur le paramètre le plus loin de sa zone cible sur ton dernier essai — indicatif, change un seul réglage à la fois et re-teste.
           </p>
         </div>
       )}
 
-      <p className="text-neutral-400 text-xs mb-6">
-        Reprend automatiquement ici si tu quittes ou si le navigateur plante.
-      </p>
+      <p className="text-text-faint text-xs mb-6">Reprend automatiquement ici si tu quittes ou si le navigateur plante.</p>
     </ScreenShell>
   );
 }
@@ -627,19 +595,15 @@ function TrialStepRow({ icon: Icon, title, consigne, done, summary, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 p-4 text-left rounded-lg border border-neutral-800 bg-neutral-900 hover:border-amber-400/50 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors"
+      className="w-full flex items-center gap-3 p-4 text-left rounded-card border border-border bg-surface hover:border-gold/50 focus:outline-none focus:ring-2 focus:ring-gold transition-colors"
     >
-      {done ? (
-        <CheckCircle2 className="w-5 h-5 text-cyan-400 shrink-0" />
-      ) : (
-        <Circle className="w-5 h-5 text-neutral-700 shrink-0" />
-      )}
-      <Icon className="w-4 h-4 text-neutral-500 shrink-0" />
+      {done ? <CheckCircle2 className="w-5 h-5 text-cyan shrink-0" /> : <Circle className="w-5 h-5 text-border shrink-0" />}
+      <Icon className="w-4 h-4 text-text-faint shrink-0" />
       <div className="min-w-0 flex-1">
-        <div className="font-medium text-neutral-100 text-sm">{title}</div>
-        <p className="text-xs text-neutral-500 mt-0.5 truncate">{done ? summary : consigne}</p>
+        <div className="font-medium text-text text-sm">{title}</div>
+        <p className="text-xs text-text-faint mt-0.5 truncate">{done ? summary : consigne}</p>
       </div>
-      <ChevronRight className="w-4 h-4 text-neutral-400 shrink-0" />
+      <ChevronRight className="w-4 h-4 text-text-faint shrink-0" />
     </button>
   );
 }
@@ -660,13 +624,13 @@ function TrialOverview({ trialNumber, pendingTrial, onOpenVideo, onOpenPhoto, on
           <button
             onClick={onSave}
             disabled={!allDone}
-            className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
+            className="w-full py-3 rounded-control bg-gold text-ink font-semibold disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan"
           >
             Enregistrer cet essai
           </button>
           <button
             onClick={onCancel}
-            className="w-full text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+            className="w-full text-sm text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded"
           >
             Annuler cet essai
           </button>
@@ -676,9 +640,7 @@ function TrialOverview({ trialNumber, pendingTrial, onOpenVideo, onOpenPhoto, on
       <div className="mb-1 mt-3">
         <ProgressBar value={doneCount} max={3} />
       </div>
-      <p className="text-neutral-400 text-sm mb-6" style={{ fontFamily: 'ui-monospace, monospace' }}>
-        {doneCount}/3 complétées
-      </p>
+      <p className="text-text-dim text-sm mb-6 font-mono">{doneCount}/3 complétées</p>
 
       <div className="space-y-3 mb-8">
         <TrialStepRow
@@ -724,9 +686,9 @@ function ReviewMarker({ point, size, label }) {
   const top = `${(point.y / size.height) * 100}%`;
   return (
     <div className="pointer-events-none">
-      <div className="absolute w-3 h-3 rounded-full bg-cyan-400 border-2 border-neutral-950" style={{ left, top, transform: 'translate(-50%,-50%)' }} />
+      <div className="absolute w-3 h-3 rounded-full bg-cyan border-2 border-bg" style={{ left, top, transform: 'translate(-50%,-50%)' }} />
       {label && (
-        <span className="absolute px-1 rounded bg-black/50 text-[8px] leading-tight text-cyan-200 whitespace-nowrap" style={{ left, top, transform: 'translate(10px, -50%)' }}>
+        <span className="absolute px-1 rounded bg-black/50 text-[8px] leading-tight text-cyan whitespace-nowrap" style={{ left, top, transform: 'translate(10px, -50%)' }}>
           {label}
         </span>
       )}
@@ -748,10 +710,10 @@ function TrialReviewScreen({ step, pendingTrial, onClose, onRedo }) {
       title="Relecture de la mesure"
       footer={
         <>
-          <button onClick={onClose} className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200">
+          <button onClick={onClose} className="w-full py-3 rounded-control bg-gold text-ink font-semibold focus:outline-none focus:ring-2 focus:ring-cyan">
             Fermer
           </button>
-          <button onClick={onRedo} className="w-full flex items-center justify-center gap-2 py-2 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
+          <button onClick={onRedo} className="w-full flex items-center justify-center gap-2 py-2 text-sm text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded">
             <RotateCcw className="w-3.5 h-3.5" /> Refaire cette étape
           </button>
         </>
@@ -760,14 +722,14 @@ function TrialReviewScreen({ step, pendingTrial, onClose, onRedo }) {
       <div className="space-y-4 mt-4 mb-6">
         {step === 'video' &&
           videoReview.map((r, i) => (
-            <div key={i} className="rounded-lg border border-neutral-800 bg-neutral-900 overflow-hidden">
+            <div key={i} className="rounded-card border border-border bg-surface overflow-hidden">
               <div className="relative bg-black">
                 <img src={r.stillUrl} alt={`Image mesurée — ${r.key}`} className="w-full h-auto block" />
                 {r.points.map((p, j) => (
                   <ReviewMarker key={j} point={p} size={r.stillSize} label={r.pointLabels[j]} />
                 ))}
               </div>
-              <div className="p-3 text-sm text-neutral-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+              <div className="p-3 text-sm text-text-dim font-mono">
                 {r.key === 'pmh' && `Hanche ${r.result.hipAngle}° · Tronc ${r.result.trunkAngle}°`}
                 {r.key === 'pmb' && `Genou ${r.result.kneeAngle}°`}
                 {r.key === 'raise' && `Angle ${r.result.angle}° · Genou ${r.result.kneeAngle}°`}
@@ -775,13 +737,11 @@ function TrialReviewScreen({ step, pendingTrial, onClose, onRedo }) {
             </div>
           ))}
         {step === 'photo' && pendingTrial?.photoReviewUrl && (
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900 overflow-hidden">
+          <div className="rounded-card border border-border bg-surface overflow-hidden">
             <div className="bg-black">
               <img src={pendingTrial.photoReviewUrl} alt="Photo frontale mesurée" className="w-full h-auto block" />
             </div>
-            <div className="p-3 text-sm text-neutral-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
-              pFSA {pendingTrial.frontal?.pFSA_cm2} cm²
-            </div>
+            <div className="p-3 text-sm text-text-dim font-mono">pFSA {pendingTrial.frontal?.pFSA_cm2} cm²</div>
           </div>
         )}
       </div>
@@ -791,9 +751,16 @@ function TrialReviewScreen({ step, pendingTrial, onClose, onRedo }) {
 
 // Schéma statique (pas à l'échelle) pour rendre "hauteur de selle / recul de selle / reach /
 // drop" concrets pour un débutant qui ne maîtrise pas le jargon bikefitting — retour terrain :
-// "il faut expliciter ces termes pour les débutants et même un petit schéma". Couleur ambre =
-// mesures liées à la selle (cohérent avec l'eyebrow ambre de cet écran), cyan = mesures liées
-// au cintre, pour que la légende texte et le schéma se répondent visuellement.
+// "il faut expliciter ces termes pour les débutants et même un petit schéma". Couleur orange =
+// mesures liées à la selle (domaine confort, cf. table de correspondance du restyle Zenna),
+// cyan = mesures liées au cintre (domaine aéro), pour que la légende texte et le schéma se
+// répondent visuellement — indépendant de la couleur de l'eyebrow de cet écran (resté au or
+// générique de ScreenShell : cet écran couvre les 2 domaines, pas un seul).
+//
+// Restyle Zenna : #fbbf24/#22d3ee en dur remplacés par var(--color-orange)/var(--color-cyan) —
+// seule source de vérité pour ces 2 teintes, plus besoin de resynchroniser ce schéma à la main
+// si la palette change encore. La silhouette du vélo (gris neutres) reste en dur : purement
+// décorative, indépendante du thème de couleur.
 function BikeDeltasDiagram() {
   const bb = { x: 155, y: 200 };
   const saddle = { x: 95, y: 80 };
@@ -803,14 +770,14 @@ function BikeDeltasDiagram() {
   const frontHub = { x: 280, y: 240 };
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3 mb-6">
+    <div className="rounded-card border border-border bg-surface p-3 mb-6">
       <svg viewBox="0 0 360 290" className="w-full h-auto" role="img" aria-label="Schéma des mesures de réglage du vélo : hauteur et recul de selle, reach, drop">
         <defs>
-          <marker id="arrow-amber" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="#fbbf24" />
+          <marker id="arrow-orange" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--color-orange)" />
           </marker>
           <marker id="arrow-cyan" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="#22d3ee" />
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--color-cyan)" />
           </marker>
         </defs>
 
@@ -830,37 +797,63 @@ function BikeDeltasDiagram() {
         <ellipse cx={saddle.x} cy={saddle.y} rx="16" ry="5" fill="#737373" />
         <circle cx={bar.x} cy={bar.y} r="5" fill="#737373" />
 
-        {/* Hauteur de selle (ambre, verticale, à gauche) */}
-        <g stroke="#fbbf24" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+        {/* Hauteur de selle (orange, verticale, à gauche) */}
+        <g stroke="var(--color-orange)" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
           <line x1={bb.x} y1={bb.y} x2="30" y2={bb.y} />
           <line x1={saddle.x} y1={saddle.y} x2="30" y2={saddle.y} />
         </g>
-        <line x1="30" y1={bb.y} x2="30" y2={saddle.y} stroke="#fbbf24" strokeWidth="2" markerStart="url(#arrow-amber)" markerEnd="url(#arrow-amber)" />
-        <text x="14" y={(bb.y + saddle.y) / 2} fill="#fbbf24" fontSize="11" textAnchor="middle" transform={`rotate(-90 14 ${(bb.y + saddle.y) / 2})`}>hauteur selle</text>
+        <line
+          x1="30"
+          y1={bb.y}
+          x2="30"
+          y2={saddle.y}
+          stroke="var(--color-orange)"
+          strokeWidth="2"
+          markerStart="url(#arrow-orange)"
+          markerEnd="url(#arrow-orange)"
+        />
+        <text x="14" y={(bb.y + saddle.y) / 2} fill="var(--color-orange)" fontSize="11" textAnchor="middle" transform={`rotate(-90 14 ${(bb.y + saddle.y) / 2})`}>
+          hauteur selle
+        </text>
 
-        {/* Recul de selle (ambre, horizontale, en bas) */}
-        <g stroke="#fbbf24" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+        {/* Recul de selle (orange, horizontale, en bas) */}
+        <g stroke="var(--color-orange)" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
           <line x1={saddle.x} y1={saddle.y} x2={saddle.x} y2="272" />
           <line x1={bb.x} y1={bb.y} x2={bb.x} y2="272" />
         </g>
-        <line x1={saddle.x} y1="272" x2={bb.x} y2="272" stroke="#fbbf24" strokeWidth="2" markerStart="url(#arrow-amber)" markerEnd="url(#arrow-amber)" />
-        <text x={(saddle.x + bb.x) / 2} y="285" fill="#fbbf24" fontSize="11" textAnchor="middle">recul selle</text>
+        <line
+          x1={saddle.x}
+          y1="272"
+          x2={bb.x}
+          y2="272"
+          stroke="var(--color-orange)"
+          strokeWidth="2"
+          markerStart="url(#arrow-orange)"
+          markerEnd="url(#arrow-orange)"
+        />
+        <text x={(saddle.x + bb.x) / 2} y="285" fill="var(--color-orange)" fontSize="11" textAnchor="middle">
+          recul selle
+        </text>
 
         {/* Reach (cyan, horizontale, en haut) */}
-        <g stroke="#22d3ee" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+        <g stroke="var(--color-cyan)" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
           <line x1={saddle.x} y1={saddle.y} x2={saddle.x} y2="16" />
           <line x1={bar.x} y1={bar.y} x2={bar.x} y2="16" />
         </g>
-        <line x1={saddle.x} y1="16" x2={bar.x} y2="16" stroke="#22d3ee" strokeWidth="2" markerStart="url(#arrow-cyan)" markerEnd="url(#arrow-cyan)" />
-        <text x={(saddle.x + bar.x) / 2} y="12" fill="#22d3ee" fontSize="11" textAnchor="middle">reach</text>
+        <line x1={saddle.x} y1="16" x2={bar.x} y2="16" stroke="var(--color-cyan)" strokeWidth="2" markerStart="url(#arrow-cyan)" markerEnd="url(#arrow-cyan)" />
+        <text x={(saddle.x + bar.x) / 2} y="12" fill="var(--color-cyan)" fontSize="11" textAnchor="middle">
+          reach
+        </text>
 
         {/* Drop (cyan, verticale, à droite) */}
-        <g stroke="#22d3ee" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
+        <g stroke="var(--color-cyan)" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2,2">
           <line x1={saddle.x} y1={saddle.y} x2="335" y2={saddle.y} />
           <line x1={bar.x} y1={bar.y} x2="335" y2={bar.y} />
         </g>
-        <line x1="335" y1={saddle.y} x2="335" y2={bar.y} stroke="#22d3ee" strokeWidth="2" markerStart="url(#arrow-cyan)" markerEnd="url(#arrow-cyan)" />
-        <text x="351" y={(saddle.y + bar.y) / 2} fill="#22d3ee" fontSize="11" textAnchor="middle" transform={`rotate(-90 351 ${(saddle.y + bar.y) / 2})`}>drop</text>
+        <line x1="335" y1={saddle.y} x2="335" y2={bar.y} stroke="var(--color-cyan)" strokeWidth="2" markerStart="url(#arrow-cyan)" markerEnd="url(#arrow-cyan)" />
+        <text x="351" y={(saddle.y + bar.y) / 2} fill="var(--color-cyan)" fontSize="11" textAnchor="middle" transform={`rotate(-90 351 ${(saddle.y + bar.y) / 2})`}>
+          drop
+        </text>
       </svg>
     </div>
   );
@@ -877,11 +870,9 @@ function BikeDeltasDiagram() {
 // absolues). L'app compare les essais entre eux automatiquement.
 function TrialDeltasGuidance() {
   return (
-    <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-6">
-      <h2 className="text-xs tracking-widest text-cyan-300 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-        Entre 2 essais, quoi changer ?
-      </h2>
-      <ul className="text-xs text-cyan-100/80 space-y-1.5 leading-relaxed">
+    <div className="rounded-card border border-cyan/20 bg-cyan/5 p-4 mb-6">
+      <h2 className="text-xs tracking-widest text-cyan uppercase mb-2 font-mono">Entre 2 essais, quoi changer ?</h2>
+      <ul className="text-xs text-cyan/80 space-y-1.5 leading-relaxed">
         <li>• Mesure et note tes valeurs actuelles, telles quelles sur le vélo — pas besoin de calculer une différence, l'app s'en charge.</li>
         <li>• D'un essai à l'autre, change un seul réglage à la fois — sinon impossible de savoir lequel a fait la différence.</li>
         <li>• Changements qui se sentent sans dérégler toute la position : selle ±5 mm, reach ±10 mm, drop ±10-15 mm.</li>
@@ -912,7 +903,7 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
       eyebrow="Réglages du vélo"
       title="Quelles sont les mesures actuelles du vélo ?"
       subtitle={
-        <p className="text-neutral-400 text-sm mb-6">Mesure directement sur le vélo pour cet essai — pas besoin de calculer une différence, l'app compare pour toi.</p>
+        <p className="text-text-dim text-sm mb-6">Mesure directement sur le vélo pour cet essai — pas besoin de calculer une différence, l'app compare pour toi.</p>
       }
       footer={
         <>
@@ -927,12 +918,12 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
               })
             }
             disabled={!requiredFieldsValid}
-            className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
+            className="w-full py-3 rounded-control bg-gold text-ink font-semibold disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan"
           >
             Valider ces réglages
           </button>
           {onCancel && (
-            <button onClick={onCancel} className="w-full text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
+            <button onClick={onCancel} className="w-full text-sm text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded">
               Annuler
             </button>
           )}
@@ -977,13 +968,13 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
         />
 
         <div>
-          <div className="text-sm text-neutral-200 mb-1.5">Prolongateurs</div>
+          <div className="text-sm text-text mb-1.5">Prolongateurs</div>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setHasAeroBars(true)}
-              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
-                hasAeroBars ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-gold ${
+                hasAeroBars ? 'bg-gold border-gold text-ink font-semibold' : 'border-border text-text-dim'
               }`}
             >
               Oui
@@ -991,14 +982,14 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
             <button
               type="button"
               onClick={() => setHasAeroBars(false)}
-              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
-                !hasAeroBars ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-gold ${
+                !hasAeroBars ? 'bg-gold border-gold text-ink font-semibold' : 'border-border text-text-dim'
               }`}
             >
               Non
             </button>
           </div>
-          <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
+          <p className="text-xs text-text-faint mt-1 leading-relaxed">
             Le vélo est-il équipé de prolongateurs (guidon aéro/triathlon) pour cet essai ? Ça change beaucoup l'aérodynamisme et la position des mains.
           </p>
         </div>
@@ -1009,29 +1000,23 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
 
 function ProfileCard({ title, accent, profile }) {
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-      <div className={`text-xs tracking-widest uppercase mb-2 ${accent}`} style={{ fontFamily: 'ui-monospace, monospace' }}>
+    <div className="rounded-card border border-border bg-surface p-4">
+      <div className={`text-xs tracking-widest uppercase mb-2 font-mono ${accent}`}>
         {title} · {profile.trial_id}
       </div>
       <div className="flex gap-6 mb-2">
         <div>
-          <div className="text-2xl font-semibold text-neutral-100" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            {profile.comfort_score}
-          </div>
-          <div className="text-xs text-neutral-500">confort</div>
+          <div className="font-display text-4xl text-text">{profile.comfort_score}</div>
+          <div className="text-xs text-text-faint">confort</div>
         </div>
         <div>
-          <div className="text-2xl font-semibold text-neutral-100" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            {profile.aero_score}
-          </div>
-          <div className="text-xs text-neutral-500">aéro</div>
+          <div className="font-display text-4xl text-text">{profile.aero_score}</div>
+          <div className="text-xs text-text-faint">aéro</div>
         </div>
       </div>
-      <div className="text-xs text-neutral-500" style={{ fontFamily: 'ui-monospace, monospace' }}>
-        {formatDeltas(profile.deltas)}
-      </div>
+      <div className="text-xs text-text-faint font-mono">{formatDeltas(profile.deltas)}</div>
       {profile.warnings.length > 0 && (
-        <div className="text-xs text-amber-400 mt-2 space-y-0.5">
+        <div className="text-xs text-gold mt-2 space-y-0.5">
           {profile.warnings.map((w, i) => (
             <div key={i}>{formatViolation(w)} — avertissement, pas exclusoire</div>
           ))}
@@ -1069,7 +1054,7 @@ function ExcludedTrialsList({ excludedTrials }) {
   return (
     <div className="space-y-2 mb-6">
       {excludedTrials.map((e) => (
-        <div key={e.trial_id} className="text-xs text-neutral-500" style={{ fontFamily: 'ui-monospace, monospace' }}>
+        <div key={e.trial_id} className="text-xs text-text-faint font-mono">
           {e.trial_id} : {e.violations.map(formatViolation).join(', ')}
         </div>
       ))}
@@ -1089,27 +1074,24 @@ function formatSessionDate(iso) {
 function HistoryCard({ entry, feedbackCount, onOpen, onDelete, onOpenFeedback }) {
   const nbTrials = entry.trials?.length ?? 0;
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-      <button
-        onClick={() => onOpen(entry)}
-        className="w-full text-left focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
-      >
-        <div className="text-sm text-neutral-100 font-medium">{formatSessionDate(entry.archivedAt)}</div>
-        <div className="text-xs text-neutral-500 mt-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+    <div className="rounded-card border border-border bg-surface p-4">
+      <button onClick={() => onOpen(entry)} className="w-full text-left focus:outline-none focus:ring-2 focus:ring-gold rounded">
+        <div className="text-sm text-text font-medium">{formatSessionDate(entry.archivedAt)}</div>
+        <div className="text-xs text-text-faint mt-1 font-mono">
           {nbTrials} essai{nbTrials > 1 ? 's' : ''} · objectif {entry.profile?.goal === 'comfort' ? 'confort' : 'aéro'} · souplesse{' '}
           {entry.profile?.hipFlexibilityScore ?? '?'}/5
         </div>
       </button>
-      <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-neutral-800">
+      <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-border">
         <button
           onClick={() => onOpenFeedback(entry)}
-          className="text-xs text-cyan-300 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded px-1"
+          className="text-xs text-cyan underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan rounded px-1"
         >
           Retour post-sortie{feedbackCount > 0 ? ` (${feedbackCount})` : ''}
         </button>
         <button
           onClick={() => { if (confirm('Supprimer ce bilan de l’historique ?')) onDelete(entry.id); }}
-          className="text-xs text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+          className="text-xs text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded px-1"
         >
           Supprimer
         </button>
@@ -1125,26 +1107,26 @@ function HistoryScreen({ history, feedbackLog, onOpen, onDelete, onOpenFeedback,
   return (
     <ScreenShell
       eyebrow="Historique"
-      eyebrowColor="text-cyan-400"
+      eyebrowColor="text-cyan"
       title="Tes bilans précédents"
       footer={
         <>
           {sorted.length > 0 && (
             <button
               onClick={onViewTrend}
-              className="w-full py-3 rounded-lg border border-cyan-400/40 text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+              className="w-full py-3 rounded-control border border-cyan/40 text-cyan focus:outline-none focus:ring-2 focus:ring-cyan"
             >
               Voir la tendance
             </button>
           )}
-          <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+          <button onClick={onBack} className="w-full py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold">
             Retour
           </button>
         </>
       }
     >
       {sorted.length === 0 ? (
-        <p className="text-neutral-400 text-sm my-6">Aucun bilan archivé pour l'instant.</p>
+        <p className="text-text-dim text-sm my-6">Aucun bilan archivé pour l'instant.</p>
       ) : (
         <div className="space-y-3 my-4">
           {sorted.map((entry) => (
@@ -1169,12 +1151,15 @@ function HistoryScreen({ history, feedbackLog, onOpen, onDelete, onOpenFeedback,
 // (moins de 3 essais valides, cf. runEngine) n'a pas de profils Confort max/Équilibré/Aéro max
 // et est donc exclu du calcul, pas juste affiché à zéro.
 //
-// Couleurs alignées sur ProfileCard (ambre = confort, cyan = aéro, rose = équilibré) : même
-// convention que la carte de résultats, à garder synchronisée si celle-ci change.
+// Couleurs alignées sur ProfileCard (orange = confort, or = équilibré, cyan = aéro) : même
+// convention que la carte de résultats, à garder synchronisée si celle-ci change. var(--color-*)
+// plutôt que du hex en dur (restyle Zenna) : une seule source de vérité pour ces 3 teintes,
+// que ce SVG et les classes Tailwind de ProfileCard partagent — les attributs de présentation
+// SVG (stroke/fill) résolvent les custom properties CSS comme n'importe quelle autre valeur.
 const PROFILE_SERIES = [
-  { key: 'confort_max', label: 'Confort max', color: '#fbbf24' },
-  { key: 'equilibre', label: 'Équilibré', color: '#f472b6' },
-  { key: 'aero_max', label: 'Aéro max', color: '#22d3ee' },
+  { key: 'confort_max', label: 'Confort max', color: 'var(--color-orange)' },
+  { key: 'equilibre', label: 'Équilibré', color: 'var(--color-gold)' },
+  { key: 'aero_max', label: 'Aéro max', color: 'var(--color-cyan)' },
 ];
 
 // p est le format de sortie du moteur (toOutputProfile) : comfort_score/aero_score en
@@ -1226,8 +1211,8 @@ function TrendChart({ title, unit, decimals, seriesList, dates }) {
   };
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3">
-      <div className="text-xs text-neutral-300 mb-2">{title}</div>
+    <div className="rounded-card border border-border bg-surface p-3">
+      <div className="text-xs text-text-dim mb-2">{title}</div>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${TREND_CHART_W} ${TREND_CHART_H}`}
@@ -1241,7 +1226,7 @@ function TrendChart({ title, unit, decimals, seriesList, dates }) {
           y1={TREND_CHART_H - TREND_PAD_Y}
           x2={TREND_CHART_W - TREND_PAD_X}
           y2={TREND_CHART_H - TREND_PAD_Y}
-          stroke="#292524"
+          stroke="var(--color-border)"
           strokeWidth="1"
         />
         {seriesList.map((s) => (
@@ -1261,7 +1246,7 @@ function TrendChart({ title, unit, decimals, seriesList, dates }) {
             y1={TREND_PAD_Y / 2}
             x2={xAt(hoverI)}
             y2={TREND_CHART_H - TREND_PAD_Y / 2}
-            stroke="#525252"
+            stroke="var(--color-text-faint)"
             strokeWidth="1"
             strokeDasharray="2,2"
           />
@@ -1273,21 +1258,21 @@ function TrendChart({ title, unit, decimals, seriesList, dates }) {
               cx={xAt(i)}
               cy={yAt(v)}
               r={hoverI === i ? 4.5 : 3}
-              fill={hoverI === i ? s.color : '#171717'}
+              fill={hoverI === i ? s.color : 'var(--color-surface)'}
               stroke={s.color}
               strokeWidth="2"
             />
           ))
         )}
       </svg>
-      <div className="flex justify-between text-[10px] text-neutral-500 mt-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+      <div className="flex justify-between text-[10px] text-text-faint mt-1 font-mono">
         <span>{formatSessionDateShort(dates[0])}</span>
         {n > 1 && <span>{formatSessionDateShort(dates[n - 1])}</span>}
       </div>
-      <div className="text-xs mt-1.5 h-4" style={{ fontFamily: 'ui-monospace, monospace' }}>
+      <div className="text-xs mt-1.5 h-4 font-mono">
         {hoverI !== null && (
           <>
-            <span className="text-neutral-500">{formatSessionDateShort(dates[hoverI])} · </span>
+            <span className="text-text-faint">{formatSessionDateShort(dates[hoverI])} · </span>
             {seriesList.map((s) => (
               <span key={s.key} className="mr-3" style={{ color: s.color }}>
                 {s.values[hoverI].toFixed(decimals)}
@@ -1319,16 +1304,16 @@ function TrendScreen({ history, weights, onBack }) {
   return (
     <ScreenShell
       eyebrow="Tendance"
-      eyebrowColor="text-cyan-400"
+      eyebrowColor="text-cyan"
       title="Évolution entre tes bilans"
       footer={
-        <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+        <button onClick={onBack} className="w-full py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold">
           Retour à l'historique
         </button>
       }
     >
       {points.length < 2 ? (
-        <p className="text-neutral-400 text-sm my-6 leading-relaxed">
+        <p className="text-text-dim text-sm my-6 leading-relaxed">
           Pas encore assez de bilans avec résultats pour voir une tendance — il en faut au moins 2 (avec au moins 3 essais valides chacun).
         </p>
       ) : (
@@ -1337,8 +1322,8 @@ function TrendScreen({ history, weights, onBack }) {
             <button
               type="button"
               onClick={() => setMode('equilibre')}
-              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
-                mode === 'equilibre' ? 'bg-cyan-400 border-cyan-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan ${
+                mode === 'equilibre' ? 'bg-cyan border-cyan text-ink font-semibold' : 'border-border text-text-dim'
               }`}
             >
               Équilibré
@@ -1346,8 +1331,8 @@ function TrendScreen({ history, weights, onBack }) {
             <button
               type="button"
               onClick={() => setMode('profiles')}
-              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
-                mode === 'profiles' ? 'bg-cyan-400 border-cyan-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan ${
+                mode === 'profiles' ? 'bg-cyan border-cyan text-ink font-semibold' : 'border-border text-text-dim'
               }`}
             >
               Les 3 profils
@@ -1357,7 +1342,7 @@ function TrendScreen({ history, weights, onBack }) {
           {mode === 'profiles' && (
             <div className="flex gap-4 mb-4">
               {PROFILE_SERIES.map((s) => (
-                <div key={s.key} className="flex items-center gap-1.5 text-xs text-neutral-400">
+                <div key={s.key} className="flex items-center gap-1.5 text-xs text-text-faint">
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.color }} />
                   {s.label}
                 </div>
@@ -1382,7 +1367,7 @@ function TrendScreen({ history, weights, onBack }) {
           </div>
 
           {excludedCount > 0 && (
-            <p className="text-xs text-neutral-500 mb-4">
+            <p className="text-xs text-text-faint mb-4">
               {excludedCount} bilan{excludedCount > 1 ? 's' : ''} archivé{excludedCount > 1 ? 's' : ''} sans assez d'essais valides, non inclus.
             </p>
           )}
@@ -1406,10 +1391,10 @@ function FeedbackForm({ sessionEntry, onSubmit, onCancel }) {
   return (
     <ScreenShell
       eyebrow="Retour post-sortie"
-      eyebrowColor="text-cyan-400"
+      eyebrowColor="text-cyan"
       title="Comment ça s'est passé ?"
       subtitle={
-        <p className="text-neutral-400 text-sm mb-6 leading-relaxed">
+        <p className="text-text-dim text-sm mb-6 leading-relaxed">
           Sur le réglage du bilan du {formatSessionDate(sessionEntry.archivedAt)}. Une douleur qui revient sur 2 sorties de suite pèsera un
           peu plus dans le score confort de ton prochain bilan — 1 sortie isolée ne change rien.
         </p>
@@ -1418,13 +1403,13 @@ function FeedbackForm({ sessionEntry, onSubmit, onCancel }) {
         <>
           <button
             onClick={() => onSubmit(FEEDBACK_ZONES.map((z) => ({ zone: z.key, painScore: scores[z.key] })))}
-            className="w-full py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-cyan-200"
+            className="w-full py-3 rounded-control bg-cyan text-ink font-semibold focus:outline-none focus:ring-2 focus:ring-gold"
           >
             Enregistrer cette sortie
           </button>
           <button
             onClick={onCancel}
-            className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+            className="w-full text-xs text-text-dim underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded"
           >
             Annuler
           </button>
@@ -1434,23 +1419,22 @@ function FeedbackForm({ sessionEntry, onSubmit, onCancel }) {
       <div className="space-y-5 mt-4">
         {FEEDBACK_ZONES.map((z) => (
           <div key={z.key}>
-            <div className="text-sm text-neutral-200 mb-1.5">{z.label}</div>
+            <div className="text-sm text-text mb-1.5">{z.label}</div>
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((n) => (
                 <button
                   key={n}
                   type="button"
                   onClick={() => setScores((prev) => ({ ...prev, [z.key]: n }))}
-                  className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
-                    scores[z.key] === n ? 'bg-cyan-400 border-cyan-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+                  className={`flex-1 py-2 rounded-control border text-sm font-mono transition-colors focus:outline-none focus:ring-2 focus:ring-cyan ${
+                    scores[z.key] === n ? 'bg-cyan border-cyan text-ink font-semibold' : 'border-border text-text-dim'
                   }`}
-                  style={{ fontFamily: 'ui-monospace, monospace' }}
                 >
                   {n}
                 </button>
               ))}
             </div>
-            <div className="flex justify-between text-[10px] text-neutral-500 mt-1">
+            <div className="flex justify-between text-[10px] text-text-faint mt-1">
               <span>aucune douleur</span>
               <span>intense</span>
             </div>
@@ -1465,9 +1449,9 @@ function ResultsScreen({ result, onBack, backLabel = 'Retour à la session' }) {
   return (
     <ScreenShell
       eyebrow="Résultats"
-      eyebrowColor="text-cyan-400"
+      eyebrowColor="text-cyan"
       footer={
-        <button onClick={onBack} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+        <button onClick={onBack} className="w-full py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold">
           {backLabel}
         </button>
       }
@@ -1476,7 +1460,7 @@ function ResultsScreen({ result, onBack, backLabel = 'Retour à la session' }) {
         {result.status === 'insufficient_valid_trials' ? (
           <>
             <h1 className="text-xl font-semibold mb-4">Pas encore assez d’essais valides</h1>
-            <p className="text-neutral-400 text-sm mb-6">{result.message}</p>
+            <p className="text-text-dim text-sm mb-6">{result.message}</p>
             <ExcludedTrialsList excludedTrials={result.excluded_trials} />
           </>
         ) : (
@@ -1487,16 +1471,15 @@ function ResultsScreen({ result, onBack, backLabel = 'Retour à la session' }) {
             </h1>
             {result.profiles ? (
               <div className="space-y-3 my-6">
-                {/* Audit visuel : convention couleur de l'appli — ambre = selle/confort,
-                    cyan = cintre/aéro (cf. TapImage, ASLR...). Ces 3 cartes utilisaient un
-                    mappage sans rapport (confort en cyan, aéro en rose) qui contredisait cette
-                    convention partout ailleurs dans l'app. */}
-                <ProfileCard title="Confort max" accent="text-amber-400" profile={result.profiles.confort_max} />
-                <ProfileCard title="Équilibré" accent="text-pink-400" profile={result.profiles.equilibre} />
-                <ProfileCard title="Aéro max" accent="text-cyan-400" profile={result.profiles.aero_max} />
+                {/* Convention couleur de l'appli (restyle Zenna) : orange = selle/confort, or =
+                    équilibré, cyan = cintre/aéro — même mapping que PROFILE_SERIES/TrendChart et
+                    le schéma BikeDeltasDiagram, à garder synchronisés si l'un des 3 change. */}
+                <ProfileCard title="Confort max" accent="text-orange" profile={result.profiles.confort_max} />
+                <ProfileCard title="Équilibré" accent="text-gold" profile={result.profiles.equilibre} />
+                <ProfileCard title="Aéro max" accent="text-cyan" profile={result.profiles.aero_max} />
               </div>
             ) : (
-              <p className="text-neutral-400 text-sm my-6">Aucun front Pareto disponible.</p>
+              <p className="text-text-dim text-sm my-6">Aucun front Pareto disponible.</p>
             )}
             <ExcludedTrialsList excludedTrials={result.excluded_trials} />
           </>
