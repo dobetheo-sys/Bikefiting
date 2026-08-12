@@ -171,13 +171,13 @@ function formatElapsed(ms) {
 
 function ChecklistPanel({ mode, open, onToggle }) {
   return (
-    <div className="bg-neutral-900 border-t border-neutral-800">
+    <div className="bg-surface border-t border-border">
       {/* Audit accessibilité : seul élément interactif de l'appli sans focus:ring (juste
           focus:outline-none, sans remplacement — invisible au clavier/accès-switch). Le
           chevron était aussi inversé (bas quand ouvert, haut quand fermé) — convention
           habituelle : bas = "développer" (fermé), haut = "réduire" (ouvert). */}
-      <button onClick={onToggle} className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-neutral-400 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
-        <span className="tracking-wide uppercase" style={{ fontFamily: 'ui-monospace, monospace' }}>
+      <button onClick={onToggle} className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-text-dim focus:outline-none focus:ring-2 focus:ring-gold rounded">
+        <span className="font-mono tracking-wide uppercase">
           Checklist · {MODES[mode].label}
         </span>
         {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -185,8 +185,8 @@ function ChecklistPanel({ mode, open, onToggle }) {
       {open && (
         <ul className="px-4 pb-3 space-y-1.5">
           {MODES[mode].checklist.map((item, i) => (
-            <li key={i} className="text-xs text-neutral-300 flex gap-2">
-              <span className="text-amber-400 shrink-0">·</span>
+            <li key={i} className="text-xs text-text-dim flex gap-2">
+              <span className="text-gold shrink-0">·</span>
               {item}
             </li>
           ))}
@@ -267,7 +267,7 @@ const TAP_IMAGE_ZOOM_STEP = 0.5;
 // partager le même doigt sans ambiguïté. `imgRef.current.getBoundingClientRect()` reflète
 // automatiquement la position/taille APRÈS le transform CSS de zoom/pan (comportement standard
 // du DOM) — posFromEvent/hitTestPoint n'ont donc besoin d'aucun changement pour rester justes.
-function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMovePoint, color = '#22d3ee' }) {
+function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMovePoint, color = 'var(--color-cyan)' }) {
   const imgRef = useRef(null);
   const viewportRef = useRef(null);
   const [loupe, setLoupe] = useState(null);
@@ -504,7 +504,7 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
             style={{ left: `${(p.x / size.width) * 100}%`, top: `${(p.y / size.height) * 100}%`, transform: 'translate(-50%,-50%)' }}
           >
             <div
-              className="rounded-full border-2 border-neutral-950"
+              className="rounded-full border-2 border-ink"
               style={{
                 width: i === dragIndex ? 16 : 12,
                 height: i === dragIndex ? 16 : 12,
@@ -541,12 +541,12 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
         onPointerDown={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-        <div className="flex flex-col rounded-lg border border-neutral-700 bg-neutral-950/90 overflow-hidden">
+        <div className="flex flex-col rounded-control border border-border bg-bg/90 overflow-hidden">
           <button
             type="button"
             onClick={() => applyZoom(zoom + TAP_IMAGE_ZOOM_STEP)}
             disabled={zoom >= TAP_IMAGE_ZOOM_MAX}
-            className="w-9 h-9 flex items-center justify-center text-neutral-200 text-lg disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="w-9 h-9 flex items-center justify-center text-text text-lg disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gold"
             aria-label="Zoomer"
           >
             +
@@ -555,8 +555,7 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
             type="button"
             onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
             disabled={zoom === 1}
-            className="w-9 h-9 flex items-center justify-center text-neutral-400 text-[10px] border-y border-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400"
-            style={{ fontFamily: 'ui-monospace, monospace' }}
+            className="w-9 h-9 flex items-center justify-center text-text-dim text-[10px] font-mono border-y border-border disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gold"
             aria-label="Réinitialiser le zoom"
           >
             {Math.round(zoom * 100)}%
@@ -565,14 +564,14 @@ function TapImage({ src, alt, size, points, pointLabels, maxPoints, onTap, onMov
             type="button"
             onClick={() => applyZoom(zoom - TAP_IMAGE_ZOOM_STEP)}
             disabled={zoom <= TAP_IMAGE_ZOOM_MIN}
-            className="w-9 h-9 flex items-center justify-center text-neutral-200 text-lg disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="w-9 h-9 flex items-center justify-center text-text text-lg disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gold"
             aria-label="Dézoomer"
           >
             −
           </button>
         </div>
         {zoom > 1 && (
-          <span className="px-1.5 py-0.5 rounded bg-black/70 text-[9px] text-neutral-400 whitespace-nowrap">
+          <span className="px-1.5 py-0.5 rounded bg-black/70 text-[9px] text-text-dim whitespace-nowrap">
             2 doigts pour te déplacer
           </span>
         )}
@@ -1006,46 +1005,46 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const calibrateLevel = () => { if (tilt !== null) setTiltOffset(tilt); };
 
   return (
-    <div className="w-full h-full min-h-screen bg-neutral-950 text-neutral-100 flex flex-col" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div className="w-full h-full min-h-screen bg-bg text-text font-sans flex flex-col">
       <canvas ref={canvasRef} className="hidden" />
 
       {screen === 'intro' && (
         <div className="flex-1 flex flex-col justify-center px-6 py-10 max-w-md mx-auto w-full">
           <div className="mb-8">
-            <div className="text-xs tracking-widest text-amber-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
+            <div className="text-xs font-mono tracking-widest text-gold uppercase mb-2">
               Capture posture · aéro
             </div>
-            <h1 className="text-2xl font-semibold text-neutral-100 leading-snug">Choisis ta capture</h1>
-            <p className="text-neutral-400 text-sm mt-1">Deux entrées nécessaires pour scorer un essai.</p>
+            <h1 className="text-2xl font-semibold text-text leading-snug">Choisis ta capture</h1>
+            <p className="text-text-dim text-sm mt-1">Deux entrées nécessaires pour scorer un essai.</p>
           </div>
 
           <button
             onClick={() => startCamera('profile_video')}
-            className="group text-left rounded-lg border border-neutral-800 bg-neutral-900 p-4 mb-3 hover:border-amber-400/50 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors"
+            className="group text-left rounded-card border border-border bg-surface p-4 mb-3 hover:border-orange/50 focus:outline-none focus:ring-2 focus:ring-gold transition-colors"
           >
             <div className="flex items-center gap-3">
-              <Video className="w-5 h-5 text-amber-400 shrink-0" />
+              <Video className="w-5 h-5 text-orange shrink-0" />
               <div>
-                <div className="font-medium text-neutral-100">Vidéo profil</div>
-                <div className="text-xs text-neutral-400 mt-0.5">Angles articulaires sur le cycle de pédalage</div>
+                <div className="font-medium text-text">Vidéo profil</div>
+                <div className="text-xs text-text-dim mt-0.5">Angles articulaires sur le cycle de pédalage</div>
               </div>
             </div>
           </button>
 
           <button
             onClick={() => startCamera('frontal_photo')}
-            className="group text-left rounded-lg border border-neutral-800 bg-neutral-900 p-4 hover:border-cyan-400/50 focus:outline-none focus:ring-2 focus:ring-cyan-400 transition-colors"
+            className="group text-left rounded-card border border-border bg-surface p-4 hover:border-cyan/50 focus:outline-none focus:ring-2 focus:ring-cyan transition-colors"
           >
             <div className="flex items-center gap-3">
-              <Camera className="w-5 h-5 text-cyan-400 shrink-0" />
+              <Camera className="w-5 h-5 text-cyan shrink-0" />
               <div>
-                <div className="font-medium text-neutral-100">Photo frontale</div>
-                <div className="text-xs text-neutral-400 mt-0.5">Surface frontale (pFSA), avec étalonnage</div>
+                <div className="font-medium text-text">Photo frontale</div>
+                <div className="text-xs text-text-dim mt-0.5">Surface frontale (pFSA), avec étalonnage</div>
               </div>
             </div>
           </button>
 
-          <p className="text-neutral-500 text-xs mt-8 leading-relaxed">
+          <p className="text-text-faint text-xs mt-8 leading-relaxed">
             L’étalonnage de la photo frontale se fait par 2 points touchés directement sur l’image, pas de repère automatique en V1.
           </p>
         </div>
@@ -1055,12 +1054,12 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
         <div className="flex-1 relative flex flex-col">
           {error ? (
             <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-              {/* Audit cohérence visuelle : text-red-400 ici vs text-amber-400 partout ailleurs
-                  pour la même icône "erreur" (App.jsx ErrorScreen, ErrorBoundary) — même
-                  signification, deux couleurs différentes selon le fichier. */}
-              <AlertTriangle className="w-8 h-8 text-amber-400 mb-3" />
-              <p className="text-neutral-200 text-sm max-w-xs">{error}</p>
-              <button onClick={startOver} className="mt-6 text-sm text-amber-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
+              {/* Audit cohérence visuelle (corrigé) : cette icône "erreur" utilisait une couleur
+                  différente de ses équivalents (App.jsx ErrorScreen, ErrorBoundary) pour la
+                  même signification — text-gold partout maintenant. */}
+              <AlertTriangle className="w-8 h-8 text-gold mb-3" />
+              <p className="text-text text-sm max-w-xs">{error}</p>
+              <button onClick={startOver} className="mt-6 text-sm text-gold underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded">
                 Retour
               </button>
             </div>
@@ -1069,16 +1068,16 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               <div className="flex-1 flex flex-col items-center justify-center px-6 text-center bg-black">
                 {VIDEO_MODES.has(mode) ? (
                   <>
-                    <Video className="w-9 h-9 text-neutral-700 mb-4" />
-                    <p className="text-neutral-300 text-sm max-w-xs leading-relaxed">
+                    <Video className="w-9 h-9 text-text-faint mb-4" />
+                    <p className="text-text-dim text-sm max-w-xs leading-relaxed">
                       Filme {MODES[mode].label} avec l'appli caméra de ton téléphone en suivant la checklist ci-dessous,
                       puis importe le fichier ici.
                     </p>
                   </>
                 ) : (
                   <>
-                    <Camera className="w-9 h-9 text-neutral-700 mb-4" />
-                    <p className="text-neutral-300 text-sm max-w-xs leading-relaxed">
+                    <Camera className="w-9 h-9 text-text-faint mb-4" />
+                    <p className="text-text-dim text-sm max-w-xs leading-relaxed">
                       Prends {MODES[mode].label} avec l'appli photo de ton téléphone en suivant la checklist ci-dessous,
                       puis importe le fichier ici.
                     </p>
@@ -1089,7 +1088,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               <ChecklistPanel mode={mode} open={checklistOpen} onToggle={() => setChecklistOpen((v) => !v)} />
 
               <div className="bg-black px-6 py-5 flex flex-col items-center gap-3">
-                <label className="w-full flex items-center justify-center gap-2 py-3.5 rounded-lg bg-amber-400 text-neutral-950 font-medium cursor-pointer focus-within:ring-2 focus-within:ring-amber-200">
+                <label className="w-full flex items-center justify-center gap-2 py-3.5 rounded-control bg-gold text-ink font-semibold cursor-pointer focus-within:ring-2 focus-within:ring-cyan">
                   <Upload className="w-4 h-4" />
                   {VIDEO_MODES.has(mode) ? 'Choisir la vidéo' : 'Choisir la photo'}
                   <input
@@ -1101,14 +1100,14 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 </label>
                 <button
                   onClick={startLiveCapture}
-                  className="text-xs text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+                  className="text-xs text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded px-1"
                 >
                   {VIDEO_MODES.has(mode) ? "Filmer directement dans l'appli" : 'Prendre la photo maintenant dans l’appli'}
                 </button>
                 {onCancel && (
                   <button
                     onClick={onCancel}
-                    className="text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+                    className="text-xs text-text-dim underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded px-1"
                   >
                     Annuler
                   </button>
@@ -1132,13 +1131,13 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                   {/* Indicateur de niveau (best-effort, se cache si le capteur n'est pas dispo) */}
                   {displayedTilt !== null && (
                     <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-auto">
-                      <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/50" style={{ fontFamily: 'ui-monospace, monospace' }}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${isLevelOk ? 'bg-cyan-400' : 'bg-red-400'}`} />
-                        <span className="text-[11px] text-neutral-200">{isLevelOk ? 'niveau ok' : `inclinaison ${displayedTilt.toFixed(0)}°`}</span>
+                      <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/50 font-mono">
+                        <div className={`w-1.5 h-1.5 rounded-full ${isLevelOk ? 'bg-cyan' : 'bg-danger'}`} />
+                        <span className="text-[11px] text-text">{isLevelOk ? 'niveau ok' : `inclinaison ${displayedTilt.toFixed(0)}°`}</span>
                       </div>
                       <button
                         onClick={calibrateLevel}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400 text-neutral-950 text-xs font-medium shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-200"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gold text-ink text-xs font-semibold shadow-lg focus:outline-none focus:ring-2 focus:ring-cyan"
                         aria-label="Calibrer le niveau : tiens le téléphone bien droit puis touche ce bouton"
                       >
                         <Crosshair className="w-3.5 h-3.5" />
@@ -1150,8 +1149,8 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
 
                 {recording && (
                   <div className="absolute top-4 right-4 flex items-center gap-2 px-2.5 py-1 rounded-full bg-black/60">
-                    <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-                    <span className="text-xs text-neutral-100" style={{ fontFamily: 'ui-monospace, monospace' }}>{formatElapsed(elapsedMs)}</span>
+                    <span className="w-2 h-2 rounded-full bg-danger animate-pulse" />
+                    <span className="text-xs text-text font-mono">{formatElapsed(elapsedMs)}</span>
                   </div>
                 )}
               </div>
@@ -1164,7 +1163,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                   recording ? (
                     <button
                       onClick={stopRecording}
-                      className="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-300 ring-offset-2 ring-offset-black"
+                      className="w-16 h-16 rounded-full bg-danger flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-gold ring-offset-2 ring-offset-black"
                       aria-label="Arrêter l'enregistrement"
                     >
                       <Square className="w-5 h-5 text-white" fill="white" />
@@ -1172,25 +1171,25 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                   ) : (
                     <button
                       onClick={startRecording}
-                      className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-amber-400 ring-offset-2 ring-offset-black"
+                      className="w-16 h-16 rounded-full border-4 border-text flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-gold ring-offset-2 ring-offset-black"
                       aria-label="Démarrer l'enregistrement"
                     >
-                      <span className="w-12 h-12 rounded-full bg-red-500" />
+                      <span className="w-12 h-12 rounded-full bg-danger" />
                     </button>
                   )
                 ) : (
                   <button
                     onClick={capturePhoto}
-                    className="w-16 h-16 rounded-full border-4 border-neutral-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400 ring-offset-2 ring-offset-black"
+                    className="w-16 h-16 rounded-full border-4 border-text flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan ring-offset-2 ring-offset-black"
                     aria-label="Prendre la photo"
                   >
-                    <span className="w-12 h-12 rounded-full bg-neutral-100" />
+                    <span className="w-12 h-12 rounded-full bg-text" />
                   </button>
                 )}
                 {onCancel && !recording && (
                   <button
                     onClick={onCancel}
-                    className="text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1"
+                    className="text-xs text-text-dim underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded px-1"
                   >
                     Annuler
                   </button>
@@ -1210,13 +1209,13 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
         // sans aucun moyen d'y accéder. min-h sur la zone vidéo + overflow-y-auto en secours.
         <div className="flex-1 flex flex-col overflow-y-auto">
           {currentMeasureStep && (
-            <div className="px-6 py-3 bg-neutral-900 border-b border-neutral-800">
+            <div className="px-6 py-3 bg-surface border-b border-border">
               {manualSteps.length > 1 && (
-                <p className="text-xs text-amber-400 uppercase tracking-wide mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                <p className="text-xs font-mono text-gold uppercase tracking-wide mb-1">
                   Étape {measureStepIndex + 1}/{manualSteps.length}
                 </p>
               )}
-              <p className="text-sm text-neutral-200">{currentMeasureStep.frameInstruction}</p>
+              <p className="text-sm text-text">{currentMeasureStep.frameInstruction}</p>
             </div>
           )}
           <div className="flex-1 min-h-[220px] bg-black flex items-center justify-center">
@@ -1234,11 +1233,11 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             // Défilement fin — les contrôles natifs du <video> ne permettent de seeker qu'assez
             // grossièrement au toucher, insuffisant pour tomber pile sur la bonne image (retour
             // terrain). Boutons ± image et curseur à pas fin (voir FRAME_STEP_SEC).
-            <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-3">
+            <div className="bg-surface border-t border-border px-6 py-3">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => stepReviewFrame(-1)}
-                  className="shrink-0 w-9 h-9 rounded-full border border-neutral-700 flex items-center justify-center text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  className="shrink-0 w-9 h-9 rounded-full border border-border flex items-center justify-center text-text-dim focus:outline-none focus:ring-2 focus:ring-gold"
                   aria-label="Image précédente"
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -1250,36 +1249,36 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                   step={FRAME_STEP_SEC}
                   value={reviewTime}
                   onChange={handleReviewScrub}
-                  className="flex-1 accent-amber-400"
+                  className="flex-1 accent-gold"
                   aria-label="Défilement fin de la vidéo"
                 />
                 <button
                   onClick={() => stepReviewFrame(1)}
-                  className="shrink-0 w-9 h-9 rounded-full border border-neutral-700 flex items-center justify-center text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  className="shrink-0 w-9 h-9 rounded-full border border-border flex items-center justify-center text-text-dim focus:outline-none focus:ring-2 focus:ring-gold"
                   aria-label="Image suivante"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
-              <p className="text-xs text-neutral-500 mt-1.5 text-center" style={{ fontFamily: 'ui-monospace, monospace' }}>
+              <p className="text-xs font-mono text-text-faint mt-1.5 text-center">
                 {reviewTime.toFixed(2)}s / {reviewDuration.toFixed(2)}s
               </p>
             </div>
           )}
-          <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-4 space-y-3">
-            <div className="text-xs text-neutral-400" style={{ fontFamily: 'ui-monospace, monospace' }}>
+          <div className="bg-surface border-t border-border px-6 py-4 space-y-3">
+            <div className="text-xs font-mono text-text-dim">
               {capturedMeta && `${(capturedMeta.durationMs / 1000).toFixed(1)}s · ${capturedMeta.sizeKb} Ko`}
             </div>
             <div className="flex gap-3">
-              <button onClick={retake} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+              <button onClick={retake} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold">
                 <RotateCcw className="w-4 h-4" /> Reprendre
               </button>
               {currentMeasureStep ? (
-                <button onClick={captureMeasureFrame} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200">
+                <button onClick={captureMeasureFrame} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-control bg-gold text-ink font-semibold focus:outline-none focus:ring-2 focus:ring-cyan">
                   <Check className="w-4 h-4" /> {currentMeasureStep.pickButtonLabel}
                 </button>
               ) : (
-                <button onClick={finish} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200">
+                <button onClick={finish} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-control bg-gold text-ink font-semibold focus:outline-none focus:ring-2 focus:ring-cyan">
                   <Check className="w-4 h-4" /> Valider
                 </button>
               )}
@@ -1288,7 +1287,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 (qui relance une capture, pas un abandon) était proposé. Un utilisateur qui vient
                 de filmer/importer et veut simplement abandonner cette étape était bloqué. */}
             {onCancel && (
-              <button onClick={handleCancelMeasure} className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
+              <button onClick={handleCancelMeasure} className="w-full text-xs text-text-dim underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded px-1">
                 Annuler
               </button>
             )}
@@ -1309,16 +1308,16 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
               taille de l'image — reste strictement constante pendant toute la mesure. Idem
               pour l'indice anatomique (pointHints), avec une hauteur minimale réservée pour
               2 lignes puisque son texte change (longueurs différentes selon le point). */}
-          <div className="px-6 py-3 bg-neutral-900 border-b border-neutral-800">
-            <p className="text-sm text-neutral-200">
+          <div className="px-6 py-3 bg-surface border-b border-border">
+            <p className="text-sm text-text">
               Touche {measureMaxPoints} points dans l'ordre : {currentMeasureStep.pointLabels.join(' → ')}.
             </p>
-            <p className="text-xs text-neutral-500 mt-1">
+            <p className="text-xs text-text-faint mt-1">
               {measurePoints.length}/{measureMaxPoints} points placés
               {currentMeasureStep.pointLabels[measurePoints.length] ? ` · prochain : ${currentMeasureStep.pointLabels[measurePoints.length]}` : ''}
               <span className={measurePoints.length >= measureMaxPoints ? '' : 'invisible'}> · glisse un point déjà posé pour le corriger</span>
             </p>
-            <p className="text-xs text-cyan-300 mt-1.5 leading-relaxed min-h-[2.5em]">
+            <p className="text-xs text-cyan mt-1.5 leading-relaxed min-h-[2.5em]">
               {currentMeasureStep.pointHints?.[measurePoints.length] ?? ''}
             </p>
           </div>
@@ -1336,15 +1335,15 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             />
           </div>
 
-          <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-4 space-y-3">
+          <div className="bg-surface border-t border-border px-6 py-4 space-y-3">
             {/* Toujours monté (même bordure/padding, contenu conditionnel) une fois qu'un
                 résultat peut potentiellement apparaître à cette étape — sinon ce bloc surgit au
                 dernier point posé, agrandit le pied de page, et fait sauter visuellement l'image
                 (et tous les points déjà posés) juste au-dessus. Même famille de bug que le hint
                 d'en-tête plus haut. */}
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3 space-y-1 min-h-[4.5rem]">
+            <div className="rounded-card border border-border bg-surface p-3 space-y-1 min-h-[4.5rem]">
               {measureResultInvalid && (
-                <p className="text-xs text-red-400 leading-relaxed">
+                <p className="text-xs text-danger leading-relaxed">
                   Deux points tapés sont au même endroit (ou presque) — le calcul d'angle n'est pas possible. Glisse-les pour les écarter, ou recommence.
                 </p>
               )}
@@ -1352,10 +1351,10 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 <>
                 {currentMeasureStep.key === 'raise' && (
                   <>
-                    <div className="text-2xl font-semibold text-amber-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                    <div className="font-display text-4xl text-cyan">
                       {measureResult.angle}°
                     </div>
-                    <p className="text-xs text-neutral-500">
+                    <p className="text-xs text-text-faint">
                       {measureResult.kneeAngle < KNEE_STRAIGHT_THRESHOLD
                         ? `Genou mesuré à ${measureResult.kneeAngle}° — il a l'air plié sur cette image. Essaie une image où la jambe testée est bien tendue.`
                         : `Genou mesuré à ${measureResult.kneeAngle}° (bien tendu).`}
@@ -1364,16 +1363,16 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 )}
                 {currentMeasureStep.key === 'pmh' && (
                   <>
-                    <div className="text-2xl font-semibold text-amber-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                    <div className="font-display text-4xl text-cyan">
                       Hanche {measureResult.hipAngle}°
                     </div>
-                    <div className="text-sm text-neutral-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                    <div className="text-sm font-mono text-text-dim">
                       Tronc {measureResult.trunkAngle}°
                     </div>
                   </>
                 )}
                 {currentMeasureStep.key === 'pmb' && (
-                  <div className="text-2xl font-semibold text-amber-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                  <div className="font-display text-4xl text-cyan">
                     Genou {measureResult.kneeAngle}°
                   </div>
                 )}
@@ -1382,25 +1381,25 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => setMeasurePoints((prev) => prev.slice(0, -1))} disabled={measurePoints.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400">
+              <button onClick={() => setMeasurePoints((prev) => prev.slice(0, -1))} disabled={measurePoints.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-control border border-border text-text disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gold">
                 <Undo2 className="w-4 h-4" /> Dernier point
               </button>
-              <button onClick={() => setMeasurePoints([])} disabled={measurePoints.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400">
+              <button onClick={() => setMeasurePoints([])} disabled={measurePoints.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-control border border-border text-text disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gold">
                 <RotateCcw className="w-4 h-4" /> Recommencer
               </button>
             </div>
-            <button onClick={backToReview} className="w-full py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+            <button onClick={backToReview} className="w-full py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold">
               Changer d'image
             </button>
             <button
               onClick={finishMeasureStep}
               disabled={!measureResult}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-control bg-gold text-ink font-semibold disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan"
             >
               <Check className="w-4 h-4" /> {measureStepIndex + 1 < manualSteps.length ? 'Valider et passer à l’étape suivante' : 'Valider la mesure'}
             </button>
             {onCancel && (
-              <button onClick={handleCancelMeasure} className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
+              <button onClick={handleCancelMeasure} className="w-full text-xs text-text-dim underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded px-1">
                 Annuler
               </button>
             )}
@@ -1413,11 +1412,11 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
           {/* Cf. commentaire équivalent sur l'écran 'measure' : le hint ne doit jamais changer
               la hauteur de cet en-tête, sinon l'image (et les points déjà posés) se
               redimensionnent et sautent visuellement au 1er point posé. */}
-          <div className="px-6 py-3 bg-neutral-900 border-b border-neutral-800">
-            <p className="text-sm text-neutral-200">
+          <div className="px-6 py-3 bg-surface border-b border-border">
+            <p className="text-sm text-text">
               Touche 2 points correspondant à une longueur connue (ex. les deux extrémités du cintre).
             </p>
-            <p className="text-xs text-neutral-500 mt-1">
+            <p className="text-xs text-text-faint mt-1">
               {taps.length}/2 points placés<span className={taps.length >= 2 ? '' : 'invisible'}> · glisse un point déjà posé pour le corriger</span>
             </p>
           </div>
@@ -1434,21 +1433,21 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             />
           </div>
 
-          <div className="bg-neutral-900 border-t border-neutral-800 px-6 py-4 space-y-3">
-            <label className="flex items-center gap-3 text-sm text-neutral-200">
+          <div className="bg-surface border-t border-border px-6 py-4 space-y-3">
+            <label className="flex items-center gap-3 text-sm text-text">
               Longueur réelle du repère (cm)
               <input
                 type="number"
                 value={refLengthCm}
                 onChange={(e) => setRefLengthCm(e.target.value)}
-                className="w-20 bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-neutral-100 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                className="w-20 bg-surface-2 border border-border rounded-control px-2 py-1 text-text focus:outline-none focus:ring-2 focus:ring-cyan"
               />
             </label>
 
             {/* Toujours monté (même famille de bug que les hints d'en-tête) : ce texte
                 n'apparaît qu'une fois les 2 points posés, ce qui ferait sauter visuellement les
                 2 points déjà posés juste au moment où l'utilisateur finit de les placer. */}
-            <div className={`text-xs min-h-[1em] ${calibrationTooClose ? 'text-red-400' : 'text-neutral-400'}`} style={{ fontFamily: 'ui-monospace, monospace' }}>
+            <div className={`text-xs font-mono min-h-[1em] ${calibrationTooClose ? 'text-danger' : 'text-text-dim'}`}>
               {calibrationTooClose
                 ? `${pixelLength.toFixed(0)}px mesurés — les 2 points semblent trop proches, écarte-les pour une précision correcte`
                 : pixelLength
@@ -1457,24 +1456,24 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => setTaps((prev) => prev.slice(0, -1))} disabled={taps.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400">
+              <button onClick={() => setTaps((prev) => prev.slice(0, -1))} disabled={taps.length === 0} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-control border border-border text-text disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gold">
                 <Undo2 className="w-4 h-4" /> Dernier point
               </button>
-              <button onClick={retake} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400">
+              <button onClick={retake} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold">
                 <RotateCcw className="w-4 h-4" /> Reprendre
               </button>
             </div>
             <button
               onClick={finish}
               disabled={taps.length < 2 || calibrationTooClose}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan-200"
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-control bg-cyan text-ink font-semibold disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gold"
             >
               <Check className="w-4 h-4" /> Valider l'étalonnage
             </button>
             {/* Audit ergonomie : cet écran ('calibrate') n'avait aucune sortie non plus — cf.
                 le même correctif sur l'écran 'review'. */}
             {onCancel && (
-              <button onClick={onCancel} className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1">
+              <button onClick={onCancel} className="w-full text-xs text-text-dim underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded px-1">
                 Annuler
               </button>
             )}
