@@ -241,45 +241,53 @@ aléatoire — pas l'erreur systématique de projection 2D (caméra non perpendi
 
 ---
 
-## 4. Corrections à décider
+## 4. Corrections — état
 
-| # | Correction | Nature | Impact |
-|---|---|---|---|
-| A | Bornes d'attaque du pied → Altman & Davis 2012 | Facts, sans arbitrage | Affichage |
-| B | Spec : flexion genou au contact 15-25°, pas 10-20° | Facts | Doc |
-| C | Documenter le bénéfice appuis/foulées du plancher à 130 | Facts | Doc |
-| D | Déplacer le sommet de la courbe d'économie à ~+3% | **Change les recommandations** | Fort |
-| E | Pénalité asymétrique (branche basse-cadence ~1,3×) | **Change les recommandations** | Moyen |
-| F | Sortir le tronc du score d'économie | **Change les recommandations** | Moyen |
-| G | Collecter l'oscillation verticale, ou retirer son poids | Produit | Fort |
-| H | Exiger la médiane de ≥5 appuis par essai | **Change le protocole** | Fort |
-| I | Valider l'étalement de cadence de la session | Garde-fou | Moyen |
-| J | Rééquilibrer `CHARGE_WEIGHTS` vers la cadence | **Change les recommandations** | Fort |
-| K | Inclinaison corps entier (cheville→épaule) en plus du tronc | Mesure | Moyen |
+Arbitrage retenu : **réparer l'axe économie en conservant le Pareto**, et **médiane sur 5 appuis**.
 
-A, B et C sont des corrections factuelles sans arbitrage produit. Le reste engage des décisions
-sur ce que l'outil affirme, et notamment sur la question de fond ci-dessous.
+| # | Correction | État |
+|---|---|---|
+| A | Bornes d'attaque du pied → Altman & Davis 2012 | **Appliqué** |
+| B | Spec : flexion genou au contact 15-25°, pas 10-20° | **Appliqué** |
+| C | Documenter le bénéfice appuis/foulées du plancher à 130 | **Appliqué** |
+| D | Sommet de la courbe d'économie à +3% + zone plate de ±3% | **Appliqué** |
+| E | Pénalité asymétrique (branche basse-cadence ×1,3) | **Appliqué** |
+| F | Sortir le tronc du score d'économie | **Appliqué** |
+| G | Collecter l'oscillation verticale dans l'UI (2 images/essai) | **Appliqué** |
+| H | Médiane de 5 appuis par essai | **Appliqué** |
+| I | Valider l'étalement de cadence de la session | **Appliqué** (non bloquant, signalé) |
+| J | Rééquilibrer `CHARGE_WEIGHTS` vers la cadence | **Appliqué** (0.60/0.15/0.10/0.15) |
+| K | Bornes de tronc élargies à [2°,18°], avertissement seulement | **Appliqué** |
+| L | Inclinaison corps entier (cheville→épaule) en plus du tronc | Non fait |
+
+### Ce que ça change concrètement
+
+Sur le jeu de test de référence (cadence spontanée 168, foulée propre, tapis à 12 km/h) :
+
+| Essai | Charge (avant → après) | Économie (avant → après) |
+|---|---|---|
+| spontanée (168) | 77,5 → **70** | 100 → **100** |
+| +5% (176) | 88,3 → **84,4** | 93,7 → **100** |
+| +10% (185) | 100 → **100** | 71,9 → **94,1** |
+
+**L'essai à cadence spontanée sort entièrement du front de Pareto** : il est désormais dominé par
+le +5%, qui est aussi économique et moins chargé. C'est la conséquence directe du décalage du
+sommet (§2.6) — avant correction, il gagnait l'axe économie par construction.
 
 ---
 
-## 5. La question de fond
+## 5. Ce qui reste ouvert
 
-Le front de Pareto reposait sur une opposition supposée entre charge et économie. L'audit ne la
-détruit pas, mais il la déplace :
-
-- l'axe charge est **réel et bien documenté** dans la fenêtre 0/+10% ;
-- l'axe économie, tel qu'implémenté, est **une reformulation de l'écart de cadence** et rien
-  d'autre — il n'utilise aucune mesure vidéo (§1.1) ;
-- et son sommet est **au mauvais endroit** (§2.6), ce qui fausse l'ordonnancement.
-
-Deux voies possibles, à trancher :
-
-1. **Réparer l'axe économie** : sommet à +3%, asymétrie, tronc retiré, oscillation verticale
-   réellement collectée. Il devient alors un vrai second axe, alimenté par une mesure
-   (l'oscillation) qui est le meilleur corrélat kinématique connu de l'économie.
-2. **Abandonner le Pareto** et présenter un score de charge unique plus la courbe de coût
-   métabolique en information, sans prétendre arbitrer à la place de l'athlète.
-
-La voie 1 conserve l'architecture décidée ; la voie 2 est plus honnête vis-à-vis de ce qu'un
-téléphone peut réellement mesurer. Dans les deux cas, §2.12 (mesure sur un seul appui) reste à
-traiter : c'est ce qui limite aujourd'hui la valeur de toute la partie vidéo.
+- **§2.1 et §2.2 sont insolubles en l'état** : aucun seuil publié n'existe pour le tibia ni
+  l'overstriding. Leur poids a été réduit, mais ils restent des chiffres inventés. La seule
+  sortie propre serait de collecter des données sur une population d'utilisateurs et de définir
+  les seuils sur les queues de la distribution observée, plutôt que dans l'absolu.
+- **La magnitude de la pénalité d'économie n'est pas calibrée** (§2.8). La forme de la courbe est
+  sourcée, la conversion « % d'écart → points de score » ne l'est pas.
+- **L'erreur systématique de projection 2D** (caméra non perpendiculaire) n'est pas traitée. La
+  médiane sur 5 appuis ne corrige que le bruit aléatoire.
+- **Aucune comparaison entre sessions n'est possible** (inter-jour 9-14° en vidéo 2D). Tant que
+  ce n'est pas résolu, un historique de foulée serait trompeur — à ne pas construire.
+- **`estimateCadenceFromFrames` reste du code mort** : jamais confronté au comptage manuel sur
+  de vraies vidéos, donc pas branché.
+- **Tout l'audit repose sur des résumés**, pas sur des textes intégraux (§0). À reconfirmer.

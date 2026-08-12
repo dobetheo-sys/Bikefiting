@@ -8,6 +8,7 @@ import {
   describeFootStrike,
   estimateCadenceFromFrames,
   forwardSignFromFoot,
+  medianRunContact,
   MIN_SAMPLE_RATE_HZ,
   type RunContactTaps,
 } from './running-capture-processing';
@@ -130,6 +131,45 @@ describe('computeRunContact — mesure impossible -> NaN, jamais une valeur inve
       ankle: { x: 100, y: 300 },
     });
     assert.ok(Number.isNaN(m.overstrideRatio));
+  });
+});
+
+// Audit §2.12 : une mesure sur un seul appui a une incertitude (3-8° en intra-jour, Damsted 2015)
+// du même ordre que l'écart-type de toute la population (4.4° pour le tibia). La médiane sur
+// plusieurs appuis est ce qui rend la mesure exploitable.
+describe('medianRunContact — médiane sur plusieurs appuis, robuste à un appui mal tapé', () => {
+  test('médiane et non moyenne : un appui aberrant ne déplace pas le résultat', () => {
+    const bons = [8, 9, 10, 11].map((t) => computeRunContact({ ...facingRight, ankle: { x: 100 + t * 2, y: 400 } }));
+    const aberrant = computeRunContact({ ...facingRight, ankle: { x: 100 + 200, y: 400 } }); // point posé n'importe où
+    const sansAberrant = medianRunContact(bons);
+    const avecAberrant = medianRunContact([...bons, aberrant]);
+    assert.ok(
+      Math.abs(avecAberrant.tibiaAngleDeg - sansAberrant.tibiaAngleDeg) < 3,
+      `la médiane doit absorber l'aberrant : ${sansAberrant.tibiaAngleDeg} -> ${avecAberrant.tibiaAngleDeg}`
+    );
+  });
+
+  test('sur un nombre impair d\'appuis, renvoie bien la valeur centrale', () => {
+    const trois = [0, 20, 40].map((dx) => computeRunContact({ ...facingRight, ankle: { x: 100 + dx, y: 400 } }));
+    const m = medianRunContact(trois);
+    assert.equal(m.tibiaAngleDeg, trois[1].tibiaAngleDeg);
+  });
+
+  test('le sens de course est pris à la majorité, pas médiané', () => {
+    const droite = computeRunContact(facingRight);
+    const gauche = computeRunContact({ ...facingRight, heel: { x: 125, y: 410 }, toe: { x: 95, y: 405 } });
+    assert.equal(medianRunContact([droite, droite, gauche]).forwardSign, 1);
+    assert.equal(medianRunContact([gauche, gauche, droite]).forwardSign, -1);
+  });
+
+  test('sens indéterminable si les appuis se contredisent à parts égales', () => {
+    const droite = computeRunContact(facingRight);
+    const gauche = computeRunContact({ ...facingRight, heel: { x: 125, y: 410 }, toe: { x: 95, y: 405 } });
+    assert.equal(medianRunContact([droite, gauche]).forwardSign, null);
+  });
+
+  test('aucun appui fourni -> erreur explicite plutôt qu\'un résultat vide', () => {
+    assert.throws(() => medianRunContact([]), /aucun appui fourni/);
   });
 });
 

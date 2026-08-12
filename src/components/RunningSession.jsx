@@ -18,7 +18,12 @@ import {
 import PostureCaptureFlow from './PostureCaptureFlow.jsx';
 import PrivacyNote from './PrivacyNote.jsx';
 import { ScreenShell, StepCard, GearItem, NumberField } from './ui.jsx';
-import { buildRunTrialMetrics, computeCadenceSpm, describeFootStrike } from '../capture/running-capture-processing';
+import {
+  buildRunTrialMetrics,
+  computeCadenceSpm,
+  describeFootStrike,
+  RUN_MEASUREMENT_RESOLUTION_DEG,
+} from '../capture/running-capture-processing';
 import {
   cadenceGainPct,
   cadenceTargetSpm,
@@ -177,14 +182,16 @@ function RunIntroScreen({ onStart, onExit }) {
           par rapport à cette valeur — il n'y a pas de « bonne » cadence universelle, seulement la tienne et ce qui se
           passe quand tu t'en écartes.
         </StepCard>
-        <StepCard icon={Footprints} step="2" title="Trois essais" duration="~5 min par essai" accent="bg-orange/10 text-orange-tint">
+        <StepCard icon={Footprints} step="2" title="Trois essais" duration="~10 min par essai" accent="bg-orange/10 text-orange-tint">
           À ta cadence spontanée, puis +5 %, puis +10 % — les trois écarts dont les effets ont été mesurés en
-          laboratoire. Même vitesse de tapis à chaque fois. Pour chacun : une courte vidéo de profil, puis tu places
-          6 points sur l'image où ton pied touche le sol.
+          laboratoire. Même vitesse de tapis à chaque fois. Pour chacun : une vidéo de profil, puis tu mesures
+          5 appuis (6 points chacun) et 2 images de bassin. C'est long, et c'est voulu : une mesure sur un seul
+          appui a autant d'incertitude que l'écart entre deux coureurs différents.
         </StepCard>
         <StepCard icon={CheckCircle2} step="3" title="Résultats" accent="bg-gold/10 text-gold">
           Un score de charge et un score d'économie par essai. Ils s'opposent : monter la cadence allège les
-          articulations mais coûte en économie de course. L'app te montre le compromis, elle ne choisit pas à ta place.
+          articulations, mais s'éloigner de ta foulée naturelle coûte en économie. L'app te montre le compromis,
+          elle ne choisit pas à ta place.
         </StepCard>
       </div>
 
@@ -492,11 +499,12 @@ function RunTrialOverview({ trialNumber, profile, pendingTrial, onOpenVideo, onO
         <RunTrialStepRow
           icon={Video}
           title="Vidéo de profil"
-          consigne="Filme quelques secondes de profil, puis place 6 points sur l'image où ton pied touche le sol."
+          consigne="Filme 10-15 s de profil, puis mesure 5 appuis (6 points chacun) et 2 images de bassin."
           done={hasContact}
           summary={
             hasContact
-              ? `Tibia ${pendingTrial.contact.tibiaAngleDeg}° · genou ${pendingTrial.contact.kneeFlexionICDeg}° · tronc ${pendingTrial.contact.trunkLeanDeg}°`
+              ? `Médiane de 5 appuis — tibia ${pendingTrial.contact.tibiaAngleDeg}° · genou ${pendingTrial.contact.kneeFlexionICDeg}° · tronc ${pendingTrial.contact.trunkLeanDeg}°` +
+                (pendingTrial.verticalOscillationRatio != null ? ` · oscillation ${pendingTrial.verticalOscillationRatio}` : '')
               : ''
           }
           onClick={onOpenVideo}
@@ -620,6 +628,34 @@ function RunProfileCard({ title, accent, profile, recommended }) {
   );
 }
 
+const PROFILE_SLOTS = [
+  { key: 'charge_min', title: 'Charge minimale', accent: 'text-cyan' },
+  { key: 'equilibre', title: 'Équilibré', accent: 'text-gold' },
+  { key: 'economie_max', title: 'Économie maximale', accent: 'text-orange-tint' },
+];
+
+function groupProfiles(profiles, recommendedKey) {
+  if (!profiles) return [];
+  const byTrial = new Map();
+  for (const slot of PROFILE_SLOTS) {
+    const profile = profiles[slot.key];
+    if (!profile) continue;
+    const existing = byTrial.get(profile.trial_id);
+    if (existing) {
+      existing.titles.push(slot.title);
+      existing.recommended = existing.recommended || recommendedKey === slot.key;
+    } else {
+      byTrial.set(profile.trial_id, {
+        profile,
+        titles: [slot.title],
+        accent: slot.accent,
+        recommended: recommendedKey === slot.key,
+      });
+    }
+  }
+  return [...byTrial.values()];
+}
+
 function RunResultsScreen({ result, profile, onBack }) {
   const footer = (
     <button
@@ -670,26 +706,42 @@ function RunResultsScreen({ result, profile, onBack }) {
       }
       footer={footer}
     >
+      {/* Les trois profils peuvent désigner le MÊME essai — c'est même fréquent depuis que la
+          courbe d'économie est corrigée, un essai pouvant être à la fois le moins chargé et le
+          plus équilibré. Afficher trois cartes identiques donnerait l'impression d'un bug, et
+          surtout ferait croire à trois options quand il n'y en a qu'une. On regroupe donc par
+          essai en cumulant les titres, ce qui dit la vraie information : « cet essai gagne sur
+          ces deux critères à la fois ». */}
       <div className="space-y-3 mb-6">
-        <RunProfileCard
-          title="Charge minimale"
-          accent="text-cyan"
-          profile={p?.charge_min}
-          recommended={result.recommended === 'charge_min'}
-        />
-        <RunProfileCard
-          title="Équilibré"
-          accent="text-gold"
-          profile={p?.equilibre}
-          recommended={result.recommended === 'equilibre'}
-        />
-        <RunProfileCard
-          title="Économie maximale"
-          accent="text-orange-tint"
-          profile={p?.economie_max}
-          recommended={result.recommended === 'economie_max'}
-        />
+        {groupProfiles(p, result.recommended).map((g) => (
+          <RunProfileCard
+            key={g.profile.trial_id}
+            title={g.titles.join(' · ')}
+            accent={g.accent}
+            profile={g.profile}
+            recommended={g.recommended}
+          />
+        ))}
       </div>
+
+      {/* Garde-fou de session (cf. audit §1.2) : sans étalement de cadence suffisant, les écarts
+          entre profils sont du bruit de mesure. Affiché en tête des résultats plutôt qu'en note
+          de bas de page — c'est une raison de ne pas croire ce qui est au-dessus. */}
+      {result.cadence_spread_sufficient === false && (
+        <div className="rounded-card border border-gold/30 bg-gold/5 p-4 mb-6 flex gap-3">
+          <AlertTriangle className="w-5 h-5 text-gold shrink-0 mt-0.5" />
+          <div>
+            <div className="text-sm text-gold/90 leading-relaxed">
+              Tes essais ne couvrent que {result.cadence_spread_pct}% d'écart de cadence.
+            </div>
+            <p className="text-xs text-gold/70 mt-1 leading-relaxed">
+              Compter les appuis sur 30 s a une précision d'environ ±2 pas/min. En dessous de ~4%
+              d'étalement, l'écart entre ces profils est du bruit de mesure, pas un compromis.
+              Refais un essai à une cadence nettement différente.
+            </p>
+          </div>
+        </div>
+      )}
 
       <ExcludedList excluded={result.excluded_trials} />
 
@@ -699,10 +751,12 @@ function RunResultsScreen({ result, profile, onBack }) {
           {[
             'Ces scores classent tes essais du jour entre eux. Un score de 100 veut dire « le meilleur de tes essais », pas « foulée optimale » — il n’y a aucune comparaison à d’autres coureurs.',
             'La foulée sur tapis diffère de la foulée au sol. Les écarts entre tes essais restent exploitables, les valeurs absolues ne se transposent pas telles quelles.',
-            'L’app estime une charge mécanique, elle ne prédit pas une blessure.',
+            'L’app estime une charge mécanique, elle ne prédit pas une blessure : le lien cadence → charge est documenté, le lien charge → blessure chez une personne donnée ne l’est pas.',
+            `Les angles sont des médianes de 5 appuis, mesurées à la main sur vidéo : compte environ ±${RUN_MEASUREMENT_RESOLUTION_DEG}° d’incertitude. Un écart plus petit que ça entre deux essais ne veut rien dire.`,
+            'Ne compare pas ces angles à ceux d’une autre session : en vidéo 2D, la reproductibilité d’un jour à l’autre est de l’ordre de 10°, bien plus large que les écarts que tu cherches.',
             'Si tu changes de cadence, fais-le progressivement et sur des sorties courtes d’abord : ton corps a besoin de s’y adapter.',
             !result.vertical_oscillation_used &&
-              'L’oscillation verticale n’a pas été mesurée sur tous les essais, elle a donc été ignorée pour tous plutôt que de pénaliser ceux qui ne l’ont pas.',
+              'L’oscillation verticale n’a pas été mesurée sur tous les essais, elle a donc été ignorée pour tous. Le score d’économie ne repose alors que sur l’écart de cadence — aucune mesure vidéo n’y contribue.',
           ]
             .filter(Boolean)
             .map((line, i) => (
@@ -770,7 +824,12 @@ export default function RunningSession({ onExit }) {
   }, []);
 
   const handleVideoCaptured = useCallback((payload) => {
-    setPendingTrial((prev) => ({ ...prev, contact: payload.contact, review: payload.review }));
+    setPendingTrial((prev) => ({
+      ...prev,
+      contact: payload.contact,
+      verticalOscillationRatio: payload.verticalOscillationRatio,
+      review: payload.review,
+    }));
     setStage('trial-overview');
   }, []);
 
@@ -786,7 +845,11 @@ export default function RunningSession({ onExit }) {
         id: `r${prev.length + 1}`,
         speedKmh: pendingTrial.speedKmh,
         label: `${pendingTrial.cadenceSpm} pas/min`,
-        metrics: buildRunTrialMetrics(pendingTrial.contact, pendingTrial.cadenceSpm),
+        metrics: buildRunTrialMetrics(
+          pendingTrial.contact,
+          pendingTrial.cadenceSpm,
+          pendingTrial.verticalOscillationRatio
+        ),
       },
     ]);
     setPendingTrial(null);

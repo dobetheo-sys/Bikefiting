@@ -102,6 +102,57 @@ export function computeRunContact(taps: RunContactTaps): RunContactMeasurement {
   };
 }
 
+// ---------- Agrégation sur plusieurs appuis ----------
+
+// Médiane composante par composante de plusieurs mesures d'attaque, ajoutée après audit
+// (docs/AUDIT_MOTEUR_COURSE.md §2.12). La V1 retenait UN seul appui par essai, ce qui n'est pas
+// défendable :
+//   - Riazati 2019 : il faut 12 à 19 foulées pour obtenir des cinématiques sagittales stables.
+//   - Damsted 2015, en vidéo 2D avec points placés à la main (exactement cette méthode) :
+//     erreur type intra-opérateur jusqu'à 1.6°, intervalles de prédiction à 95% de 3-8° au genou
+//     et 3-7° à la hanche en intra-jour, 9-14° en inter-jour.
+// Autrement dit l'incertitude d'une mesure unique était du même ordre que l'écart-type de toute
+// la population (4.4° pour l'angle du tibia) : impossible de distinguer un coureur à 6° d'un
+// coureur à 12°.
+//
+// Médiane et non moyenne : un appui mal tapé (point posé sur le short au lieu du grand
+// trochanter) produit une valeur très éloignée, que la moyenne intègre et que la médiane ignore.
+//
+// Ce que ça NE corrige PAS, et qu'il ne faut pas laisser croire : moyenner réduit le bruit
+// aléatoire, pas l'erreur systématique de projection 2D (caméra non perpendiculaire au tapis).
+// D'où RUN_MEASUREMENT_RESOLUTION_DEG ci-dessous.
+export const RUN_MEASUREMENT_RESOLUTION_DEG = 3;
+
+function median(values: number[]): number {
+  const clean = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (clean.length === 0) return NaN;
+  const mid = Math.floor(clean.length / 2);
+  return clean.length % 2 === 1 ? clean[mid] : (clean[mid - 1] + clean[mid]) / 2;
+}
+
+export function medianRunContact(contacts: RunContactMeasurement[]): RunContactMeasurement {
+  if (contacts.length === 0) throw new Error('medianRunContact: aucun appui fourni');
+
+  // Le sens de course est catégoriel, pas numérique : on prend la majorité plutôt qu'une
+  // médiane. Un désaccord entre appuis signale que talon/pointe ont été inversés sur au moins
+  // une image — la majorité récupère le cas, et les appuis minoritaires ressortiront de toute
+  // façon comme des valeurs aberrantes que la médiane écarte.
+  const forward = contacts.map((c) => c.forwardSign).filter((s): s is 1 | -1 => s === 1 || s === -1);
+  const positives = forward.filter((s) => s === 1).length;
+  const forwardSign: 1 | -1 | null =
+    forward.length === 0 ? null : positives * 2 === forward.length ? null : positives > forward.length / 2 ? 1 : -1;
+
+  return {
+    tibiaAngleDeg: r1(median(contacts.map((c) => c.tibiaAngleDeg))),
+    kneeFlexionICDeg: r1(median(contacts.map((c) => c.kneeFlexionICDeg))),
+    trunkLeanDeg: r1(median(contacts.map((c) => c.trunkLeanDeg))),
+    overstrideRatio: r1(median(contacts.map((c) => c.overstrideRatio)) * 1000) / 1000,
+    footStrikeAngleDeg: r1(median(contacts.map((c) => c.footStrikeAngleDeg))),
+    legLengthPx: r1(median(contacts.map((c) => c.legLengthPx))),
+    forwardSign,
+  };
+}
+
 // ---------- Cadence ----------
 
 // `stepCount` = nombre d'APPUIS (les deux pieds confondus), pas de foulées. C'est la source de

@@ -28,18 +28,24 @@ les mêmes briques de scoring — V1 complète, accessible depuis l'écran d'acc
 
 | Brique | Fichier | Testé comment |
 |---|---|---|
-| Moteur foulée (validation, score charge, score économie, Pareto, suggestion) | `src/engine/running-gait-engine.ts` | Tests `node:test` : opposition charge↔économie vérifiée sur les 3 points du balayage, front non dégénéré, refus explicites |
-| Mesure course (6 taps → angles, cadence, oscillation verticale) | `src/capture/running-capture-processing.ts` | Géométrie vérifiée à la main, dont l'invariance au sens de filmage (même geste filmé des deux côtés = mêmes chiffres) |
+| Moteur foulée (validation, score charge, score économie, Pareto, suggestion) | `src/engine/running-gait-engine.ts` | Tests `node:test` : opposition charge↔économie sur les 3 points du balayage, sommet de la courbe d'économie décalé et asymétrique, garde-fou d'étalement de cadence, refus explicites |
+| Mesure course (6 taps × 5 appuis → médiane, cadence, oscillation verticale) | `src/capture/running-capture-processing.ts` | Géométrie vérifiée à la main, dont l'invariance au sens de filmage (même geste filmé des deux côtés = mêmes chiffres) et la robustesse de la médiane à un appui mal tapé |
 | Cadence automatique depuis les landmarks | `src/capture/running-capture-processing.ts` (`estimateCadenceFromFrames`) | Signal synthétique : 180 pas/min mesurés sur une vérité terrain de 180, garde-fou Nyquist testé. **Non validé sur appareil réel** |
 | Primitives partagées vélo/course | `src/shared/geometry.ts`, `src/shared/analysis.ts` | Extraites de `capture-processing.ts`/`posture-aero-engine.ts` sans changement de comportement (tests vélo inchangés et toujours verts) |
-| Mode de capture course (6 taps sur l'image d'attaque) | `src/components/PostureCaptureFlow.jsx` (`run_video`) | **Exécuté dans un vrai Chromium** jusqu'à l'écran de capture |
+| Mode de capture course (5 appuis × 6 taps + 2 images de bassin) | `src/components/PostureCaptureFlow.jsx` (`run_video`) | **Exécuté dans un vrai Chromium** jusqu'à l'écran de capture |
 | Parcours complet (intro → profil → essais → résultats) | `src/components/RunningSession.jsx` | **Exécuté dans un vrai Chromium** de bout en bout : saisie de cadence dans ses deux modes, enregistrement d'essai, écran de résultats sur une session pré-remplie (scores conformes au moteur, essai hors vitesse écarté avec son motif) |
 | Primitives d'écran partagées | `src/components/ui.jsx` | Extraites d'`App.jsx` sans changement visuel |
 
-**Reste à confronter au terrain** : la mesure sur une vraie vidéo de course (choix de l'image
-d'attaque, précision des 6 taps) — c'est là que le parcours vélo avait révélé ses vrais
-problèmes. Limites du protocole (tapis uniquement, scores relatifs à la session, pas de
-prédiction de blessure) détaillées au §8 de son spec.
+**Audité contre la littérature** (`docs/AUDIT_MOTEUR_COURSE.md`) : tous les paramètres du moteur
+ont été confrontés à la biomécanique et à la physiologie de la course. L'audit a trouvé que l'axe
+économie n'utilisait aucune mesure vidéo, que le sommet de sa courbe était au mauvais endroit, et
+qu'une mesure sur un seul appui avait autant d'incertitude que l'écart-type de la population. Les
+correctifs sont appliqués ; ce qui reste non sourcé est listé au §5 de l'audit.
+
+**Reste à confronter au terrain** : la mesure sur une vraie vidéo de course (choix des images
+d'attaque, précision des taps) — c'est là que le parcours vélo avait révélé ses vrais problèmes.
+Limites du protocole (tapis uniquement, scores relatifs à la session, aucune comparaison possible
+entre sessions, pas de prédiction de blessure) détaillées au §8 de son spec.
 
 `npm test` fait tourner tous les tests. `npm run typecheck` type-checke tout `src/`.
 `npm run dev` / `npm run build` lancent l'app (shell Vite + Tailwind posé sur `PostureCaptureFlow.jsx`).
@@ -86,6 +92,7 @@ requête marche en CLI" et "elle échoue dans un vrai navigateur ici".
 docs/
   SPEC_POSTURE_AERO_MOTEUR.md    # spec vélo, table de confiance des sources
   SPEC_MOTEUR_COURSE.md          # spec course, même format (sources vérifiées vs hypothèses)
+  AUDIT_MOTEUR_COURSE.md         # audit du moteur course contre la littérature, et ce qui reste ouvert
 scripts/
   copy-mediapipe-wasm.mjs        # copie le WASM de @mediapipe/tasks-vision vers public/ (predev/prebuild)
 src/
@@ -119,7 +126,7 @@ src/
 
 ```bash
 npm install
-npm test          # 118 tests (vélo + course), tous passants au moment de l'écriture de ce README
+npm test          # 130 tests (vélo + course), tous passants au moment de l’écriture de ce README
 npm run typecheck
 npm run dev        # app de dev (nécessite un navigateur avec caméra pour la capture réelle)
 npm run build       # build de prod (vérifié, voir dist/)

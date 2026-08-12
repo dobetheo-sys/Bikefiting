@@ -8,7 +8,20 @@ import {
   buildManualTrialAngles,
   KNEE_STRAIGHT_THRESHOLD,
 } from '../capture/capture-processing';
-import { computeRunContact, describeFootStrike } from '../capture/running-capture-processing';
+import {
+  computeRunContact,
+  computeVerticalOscillationRatio,
+  describeFootStrike,
+  medianRunContact,
+} from '../capture/running-capture-processing';
+
+// Nombre d'appuis mesurés par essai de course, puis médianés. 5 est le compromis retenu entre
+// fiabilité et charge de travail : Riazati 2019 recommande 12 à 19 foulées pour des cinématiques
+// sagittales stables, ce qui représenterait ~100 points à taper par essai — inatteignable à la
+// main. 5 appuis (30 points) divisent le bruit aléatoire par ~2.2 sans rendre le protocole
+// décourageant, et la médiane écarte en prime l'appui franchement mal tapé. Cf. l'audit §2.12,
+// qui documente aussi ce que ça ne corrige pas (l'erreur systématique de projection 2D).
+const RUN_CONTACT_SAMPLES = 5;
 
 // posture-capture-flow.jsx
 // Flux de capture réel (caméra du téléphone) pour les entrées du pipeline §2 du spec :
@@ -83,8 +96,9 @@ const MODES = {
       'Recul suffisant pour te voir de la tête aux pieds, chaussures entièrement visibles',
       'Filme en mode paysage : plus de largeur, et tu restes cadré même si tu dérives un peu sur la courroie',
       'Même vitesse de tapis que pour tes autres essais — un essai à une autre vitesse ne sera pas comparable et sera écarté',
-      'Cours au moins 20-30 secondes à allure stabilisée avant de lancer l’enregistrement',
-      'Tu choisiras ensuite une image où le pied touche le sol, pour y placer 6 points toi-même',
+      'Cours au moins 20-30 secondes à allure stabilisée avant de lancer l’enregistrement, puis filme 10-15 secondes',
+      'Reste au même endroit sur la courroie : si tu dérives vers l’avant ou l’arrière, ta taille dans l’image change et les mesures ne sont plus comparables entre elles',
+      'Tu choisiras ensuite 5 images d’attaque du pied (6 points chacune) puis 2 images pour ton bassin — c’est long, mais une mesure sur un seul appui n’est pas fiable',
     ],
   },
 };
@@ -155,20 +169,35 @@ const MANUAL_MEASURE_STEPS = {
       compute: (pts) => computeManualTrialPmb(pts[0], pts[1], pts[2]),
     },
   ],
-  // Une seule étape, contrairement à la vidéo vélo qui en a deux : sur un cycle de pédalage les
-  // valeurs qui comptent sont réparties entre le point haut et le point bas, alors qu'en course
-  // tout ce que le moteur regarde se lit sur la MÊME image, celle de l'attaque du pied (cf.
-  // docs/SPEC_MOTEUR_COURSE.md §2B). En demander deux ajouterait du travail à l'utilisateur sans
-  // ajouter une seule mesure.
+  // Course : RUN_CONTACT_SAMPLES appuis mesurés puis médianés, plus 2 images pour l'oscillation
+  // verticale. Voir MANUAL_MEASURE_FINALIZE.run_video et l'audit §2.12 pour pourquoi un seul
+  // appui ne suffisait pas.
   run_video: [
-    {
-      key: 'contact',
-      frameInstruction:
-        "Trouve l'image où ton pied vient de toucher le tapis (le premier contact, avant que le poids ne passe dessus).",
-      pickButtonLabel: 'Choisir cette image (attaque du pied)',
+    ...Array.from({ length: RUN_CONTACT_SAMPLES }, (_, i) => ({
+      key: `contact_${i + 1}`,
+      frameInstruction: `Appui ${i + 1}/${RUN_CONTACT_SAMPLES} — trouve une image où ton pied vient de toucher le tapis (le premier contact, avant que le poids ne passe dessus).${i > 0 ? ' Prends un appui DIFFÉRENT des précédents, du même côté.' : ''}`,
+      pickButtonLabel: `Choisir cette image (appui ${i + 1}/${RUN_CONTACT_SAMPLES})`,
       pointLabels: ['épaule', 'hanche', 'genou', 'cheville', 'talon', 'pointe du pied'],
       pointHints: withJointHints(['épaule', 'hanche', 'genou', 'cheville', 'talon', 'pointe du pied']),
       compute: (pts) => computeRunContact({ shoulder: pts[0], hip: pts[1], knee: pts[2], ankle: pts[3], heel: pts[4], toe: pts[5] }),
+    })),
+    {
+      key: 'hip_low',
+      frameInstruction:
+        "Trouve l'image où ton bassin est le PLUS BAS (milieu de l'appui, jambe la plus comprimée sous toi).",
+      pickButtonLabel: 'Choisir cette image (bassin au plus bas)',
+      pointLabels: ['hanche'],
+      pointHints: withJointHints(['hanche']),
+      compute: (pts) => ({ hipY: pts[0].y }),
+    },
+    {
+      key: 'hip_high',
+      frameInstruction:
+        "Trouve l'image où ton bassin est le PLUS HAUT (phase aérienne, aucun pied au sol).",
+      pickButtonLabel: 'Choisir cette image (bassin au plus haut)',
+      pointLabels: ['hanche'],
+      pointHints: withJointHints(['hanche']),
+      compute: (pts) => ({ hipY: pts[0].y }),
     },
   ],
 };
@@ -180,7 +209,25 @@ const MANUAL_MEASURE_FINALIZE = {
   profile_video: (results) => ({ angles: buildManualTrialAngles(results[0], results[1]) }),
   // La cadence n'est pas mesurable sur une image fixe : elle est saisie à part, dans le parcours
   // course (RunningSession.jsx), puis assemblée avec ce contact via buildRunTrialMetrics.
-  run_video: (results) => ({ contact: results[0] }),
+  //
+  // Les RUN_CONTACT_SAMPLES premiers résultats sont des appuis, médianés ici plutôt que pris
+  // isolément (cf. medianRunContact et l'audit §2.12). Les deux derniers sont les positions de
+  // bassin qui donnent l'oscillation verticale — mesurée ici et non dans `compute`, parce
+  // qu'elle a besoin de la longueur de jambe issue des appuis, à laquelle une étape isolée n'a
+  // pas accès.
+  run_video: (results) => {
+    const contact = medianRunContact(results.slice(0, RUN_CONTACT_SAMPLES));
+    const low = results[RUN_CONTACT_SAMPLES];
+    const high = results[RUN_CONTACT_SAMPLES + 1];
+    // Garde-fou : legLengthPx vient de la médiane des appuis. Si elle n'est pas exploitable, on
+    // renvoie l'essai sans oscillation plutôt qu'avec un ratio faux — le moteur sait s'en passer
+    // (et l'ignore alors pour TOUS les essais, cf. runRunningEngine).
+    const verticalOscillationRatio =
+      Number.isFinite(contact.legLengthPx) && contact.legLengthPx > 0 && low && high
+        ? computeVerticalOscillationRatio({ x: 0, y: low.hipY }, { x: 0, y: high.hipY }, contact.legLengthPx)
+        : undefined;
+    return { contact, verticalOscillationRatio };
+  },
 };
 
 // Pas de défilement fin (screen 'review') — approximation à 30 im/s, suffisant pour naviguer
@@ -1377,7 +1424,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 dernier point posé, agrandit le pied de page, et fait sauter visuellement l'image
                 (et tous les points déjà posés) juste au-dessus. Même famille de bug que le hint
                 d'en-tête plus haut. */}
-            <div className={`rounded-card border border-border bg-surface p-3 space-y-1 ${currentMeasureStep.key === 'contact' ? 'min-h-[7.5rem]' : 'min-h-[4.5rem]'}`}>
+            <div className={`rounded-card border border-border bg-surface p-3 space-y-1 ${currentMeasureStep.key.startsWith('contact') ? 'min-h-[7.5rem]' : 'min-h-[4.5rem]'}`}>
               {measureResultInvalid && (
                 <p className="text-xs text-danger leading-relaxed">
                   {/* Le mode course a un second cas d'échec, distinct de deux points confondus :
@@ -1420,7 +1467,13 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                     Genou {measureResult.kneeAngle}°
                   </div>
                 )}
-                {currentMeasureStep.key === 'contact' && (
+                {currentMeasureStep.key.startsWith('hip_') && (
+                  <div className="text-sm text-text-dim">
+                    Position du bassin enregistrée. L'amplitude verticale se calcule à la fin, une
+                    fois les deux images choisies.
+                  </div>
+                )}
+                {currentMeasureStep.key.startsWith('contact') && (
                   <>
                     {/* Le tibia est mis en avant parce que c'est la mesure la plus lisible du
                         défaut le plus coûteux (pied posé trop devant). Le signe compte : négatif

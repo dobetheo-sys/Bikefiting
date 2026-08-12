@@ -80,43 +80,86 @@ describe('validateRunTrial — seules les erreurs de mesure excluent, jamais la 
 
 // Le cœur du moteur : les deux scores doivent s'OPPOSER sur la cadence, sinon un front de
 // Pareto n'aurait aucun sens (charge : Heiderscheit et al. 2011, plus de cadence = moins de
-// charge ; économie : Cavanagh & Williams 1982, le coût est minimal à la cadence spontanée).
-describe('computeChargeScore / computeEconomyScore — opposition documentée sur la cadence', () => {
+// charge ; économie : Cavanagh & Williams 1982, courbe en U autour de la foulée optimale).
+//
+// Modèle d'économie révisé après audit (docs/AUDIT_MOTEUR_COURSE.md §2.6, §2.8) : le sommet
+// n'est PAS à la cadence spontanée mais ~3% au-dessus, la courbe est plate près du sommet, et
+// la branche basse-cadence est plus raide que la branche haute.
+describe('computeChargeScore — la cadence domine, comme la littérature le justifie', () => {
   const libre = mkTrial('libre', 168);
-  const plus5 = mkTrial('plus5', 176);
   const plus10 = mkTrial('plus10', 185);
 
-  test('charge : +0% -> 77.5 (composante cadence à 50/100, le reste sans pénalité)', () => {
-    assert.equal(computeChargeScore(libre, profile), 77.5);
+  test('+0% -> 70 (composante cadence à 50/100, le reste sans pénalité)', () => {
+    assert.equal(computeChargeScore(libre, profile), 70);
   });
 
-  test('charge : +10% -> 100 (haut de la fenêtre effectivement testée en littérature)', () => {
+  test('+10% -> 100 (haut de la fenêtre effectivement testée en littérature)', () => {
     assert.equal(computeChargeScore(plus10, profile), 100);
   });
 
-  test('charge : au-delà de +10%, aucun crédit supplémentaire (pas d\'extrapolation hors du domaine étudié)', () => {
+  test('au-delà de +10%, aucun crédit supplémentaire (pas d\'extrapolation hors du domaine étudié)', () => {
     assert.equal(computeChargeScore(mkTrial('plus25', 210), profile), computeChargeScore(plus10, profile));
   });
 
-  test('économie : maximale à la cadence spontanée (100)', () => {
-    assert.equal(computeEconomyScore(libre, profile, 0, false), 100);
-  });
-
-  test('économie : décroît quand on s\'écarte de la cadence spontanée', () => {
-    const e0 = computeEconomyScore(libre, profile, 0, false);
-    const e5 = computeEconomyScore(plus5, profile, 0, false);
-    const e10 = computeEconomyScore(plus10, profile, 0, false);
-    assert.ok(e0 > e5 && e5 > e10, `attendu ${e0} > ${e5} > ${e10}`);
-    assert.equal(e10, 71.9);
-  });
-
-  test('économie : la pénalité est symétrique (une cadence trop BASSE coûte aussi)', () => {
-    const moins10 = mkTrial('moins10', 151); // -10.1%
-    assert.equal(computeEconomyScore(moins10, profile, 0, false), computeEconomyScore(plus10, profile, 0, false));
-  });
-
-  test('charge : à l\'inverse, une cadence trop basse est pénalisée, pas récompensée', () => {
+  test('une cadence trop basse est pénalisée, pas récompensée', () => {
     assert.ok(computeChargeScore(mkTrial('moins10', 151), profile) < computeChargeScore(libre, profile));
+  });
+
+  // Audit §1.3 : la V1 donnait 55 points d'amplitude à la forme (seuils inventés) contre 45 à la
+  // cadence (seule relation sourcée). La hiérarchie doit rester dans ce sens-ci.
+  test('l\'amplitude due à la cadence dépasse celle due aux seuils de forme non sourcés', () => {
+    const formeParfaite = mkTrial('a', 168, { tibiaAngleDeg: 0, overstrideRatio: 0, kneeFlexionICDeg: 25 });
+    const formeHorrible = mkTrial('b', 168, { tibiaAngleDeg: 40, overstrideRatio: 0.5, kneeFlexionICDeg: 0 });
+    const amplitudeForme = computeChargeScore(formeParfaite, profile) - computeChargeScore(formeHorrible, profile);
+    const amplitudeCadence = computeChargeScore(mkTrial('c', 185), profile) - computeChargeScore(mkTrial('d', 151), profile);
+    assert.ok(
+      amplitudeCadence > amplitudeForme,
+      `cadence ${amplitudeCadence} doit dépasser forme ${amplitudeForme}`
+    );
+  });
+});
+
+describe('computeEconomyScore — courbe en U décalée, plate au sommet et asymétrique', () => {
+  test('le sommet n\'est PAS à la cadence spontanée : +5% est aussi économique que +0%', () => {
+    // C'est le correctif central de l'audit §2.6 : de Ruiter 2014, Morgan 1994 et Moore 2016
+    // montrent tous que la cadence spontanée est SOUS l'optimum métabolique.
+    assert.equal(computeEconomyScore(mkTrial('libre', 168), profile, 0, false), 100);
+    assert.equal(computeEconomyScore(mkTrial('plus5', 176), profile, 0, false), 100);
+  });
+
+  test('au-delà de la zone plate, le coût réapparaît (+10% -> 94.1)', () => {
+    assert.equal(computeEconomyScore(mkTrial('plus10', 185), profile, 0, false), 94.1);
+  });
+
+  test('la branche BASSE cadence est plus raide que la haute (Cavanagh & Williams, Högberg)', () => {
+    // 161 spm est à -7.2% du sommet, 185 spm à +7.1% : écart quasi identique, côté bas légèrement
+    // PLUS PETIT. S'il est malgré tout plus pénalisé, l'asymétrie est bien appliquée.
+    const bas = computeEconomyScore(mkTrial('bas', 161), profile, 0, false);
+    const haut = computeEconomyScore(mkTrial('haut', 185), profile, 0, false);
+    assert.ok(bas < haut, `côté bas ${bas} doit être plus pénalisé que côté haut ${haut}`);
+  });
+
+  test('une cadence franchement basse s\'effondre (-10% -> 53.6)', () => {
+    assert.equal(computeEconomyScore(mkTrial('moins10', 151), profile, 0, false), 53.6);
+  });
+
+  // Audit §2.4 : le tronc a été retiré du score d'économie (Van Hooren 2024 — l'inclinaison
+  // statique corrèle avec la performance, pas l'économie ; une intervention de lean avant a
+  // dégradé l'économie).
+  test('l\'inclinaison du tronc n\'influence plus le score d\'économie', () => {
+    const droit = mkTrial('a', 176, { trunkLeanDeg: 1 });
+    const penche = mkTrial('b', 176, { trunkLeanDeg: 22 });
+    assert.equal(computeEconomyScore(droit, profile, 0, false), computeEconomyScore(penche, profile, 0, false));
+  });
+
+  // Audit §1.1 : c'était LE défaut structurel — l'axe économie n'utilisait aucune mesure vidéo.
+  // Avec l'oscillation verticale collectée, deux essais de même cadence doivent enfin différer.
+  test('avec oscillation verticale, deux essais de même cadence ne sont plus identiques', () => {
+    const souple = mkTrial('a', 176, { verticalOscillationRatio: 0.08 });
+    const sautillant = mkTrial('b', 176, { verticalOscillationRatio: 0.14 });
+    const eSouple = computeEconomyScore(souple, profile, 0.14, true);
+    const eSautillant = computeEconomyScore(sautillant, profile, 0.14, true);
+    assert.ok(eSouple > eSautillant, `moins d'oscillation (${eSouple}) doit primer (${eSautillant})`);
   });
 });
 
@@ -143,25 +186,34 @@ describe('runRunningEngine — pipeline complet, balayage de cadence', () => {
     assert.equal(result.profiles?.charge_min.trial_id, 't_plus10');
   });
 
-  test('économie maximale = essai à cadence spontanée', () => {
+  // Conséquence directe du décalage du sommet (audit §2.6) : avant correction, l'essai à cadence
+  // spontanée gagnait l'axe économie par construction. Il est maintenant DOMINÉ par le +5%, qui
+  // est aussi économique et moins chargé — il sort donc entièrement du front.
+  test('économie maximale = essai à +5%, plus l\'essai spontané (qui est désormais dominé)', () => {
     if (result.status !== 'ok') throw new Error('précondition non remplie');
-    assert.equal(result.profiles?.economie_max.trial_id, 't_libre');
-  });
-
-  test('équilibré = essai à +5% (le compromis classique de la littérature, retrouvé par le calcul et non codé en dur)', () => {
-    if (result.status !== 'ok') throw new Error('précondition non remplie');
-    assert.equal(result.profiles?.equilibre.trial_id, 't_plus5');
-    assert.equal(result.profiles?.equilibre.cadence_gain_pct, 4.8);
-  });
-
-  test('aucun essai ne domine les autres : les 3 sont sur le front (vraie opposition, pas un front dégénéré)', () => {
-    if (result.status !== 'ok') throw new Error('précondition non remplie');
-    const ids = [
+    assert.equal(result.profiles?.economie_max.trial_id, 't_plus5');
+    const surLeFront = [
       result.profiles?.charge_min.trial_id,
       result.profiles?.equilibre.trial_id,
       result.profiles?.economie_max.trial_id,
     ];
-    assert.equal(new Set(ids).size, 3);
+    assert.equal(surLeFront.includes('t_libre'), false);
+  });
+
+  test('le front garde bien deux essais distincts (pas un front dégénéré à un seul point)', () => {
+    if (result.status !== 'ok') throw new Error('précondition non remplie');
+    const ids = new Set([
+      result.profiles?.charge_min.trial_id,
+      result.profiles?.equilibre.trial_id,
+      result.profiles?.economie_max.trial_id,
+    ]);
+    assert.equal(ids.size, 2);
+  });
+
+  test('étalement de cadence suffisant sur un vrai balayage', () => {
+    if (result.status !== 'ok') throw new Error('précondition non remplie');
+    assert.equal(result.cadence_spread_sufficient, true);
+    assert.equal(result.cadence_spread_pct, 10.1);
   });
 
   test('recommandation par défaut = équilibré ; goal la déplace sans changer aucun score', () => {
@@ -211,6 +263,19 @@ describe('runRunningEngine — oscillation verticale : tout le monde ou personne
     assert.equal(r.status, 'ok');
     if (r.status !== 'ok') return;
     assert.equal(r.vertical_oscillation_used, false);
+  });
+});
+
+// Audit §1.2 : le moteur validait chaque essai isolément mais jamais la cohérence de la session.
+// Trois essais séparés de 1 pas/min produisaient un front d'apparence normale, alors que la
+// précision du comptage d'appuis est d'environ ±2 pas/min.
+describe('runRunningEngine — étalement de cadence : le bruit de mesure ne doit pas passer pour un compromis', () => {
+  test('trois essais à 168/169/170 -> analyse rendue mais étalement signalé insuffisant', () => {
+    const r = runRunningEngine([mkTrial('a', 168), mkTrial('b', 169), mkTrial('c', 170)], profile);
+    assert.equal(r.status, 'ok');
+    if (r.status !== 'ok') return;
+    assert.equal(r.cadence_spread_sufficient, false);
+    assert.ok(r.cadence_spread_pct < 4, `étalement ${r.cadence_spread_pct}`);
   });
 });
 

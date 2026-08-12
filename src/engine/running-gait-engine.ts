@@ -103,8 +103,20 @@ const CADENCE_PLAUSIBLE_MAX = 220;
 // avant-pied contactent avec PLUS de flexion que les attaques talon (Almeida/Davis/Lopes 2015),
 // donc ce seuil n'est pas neutre vis-à-vis du type d'attaque.
 const KNEE_FLEX_IC_WARN = 10;
-const TRUNK_LEAN_MIN = 5; // [SOURCED, convergence] inclinaison typique 5-15° ; Teng & Powers 2014 : plus de flexion du tronc réduit la contrainte fémoro-patellaire
-const TRUNK_LEAN_MAX = 15;
+// [SOURCED] Inclinaison auto-sélectionnée : 7.3 ± 3.6° (Teng & Powers 2014), individus observés
+// de −2° à 25°. Bornes élargies après audit (§2.4) : la V1 utilisait [5°,15°], qui avertissait
+// ~28% des coureurs normaux — dont 26% sur la seule borne basse. Ce n'était pas un détecteur
+// d'anomalie mais un générateur de bruit. [2°,18°] correspond à peu près aux queues réelles de
+// la distribution et n'avertit plus que ~7%.
+//
+// Ces bornes ne servent QUE d'avertissement descriptif : le tronc a été retiré du score
+// d'économie (cf. ECONOMY_WEIGHTS) et n'entre dans aucun score. Raison de fond : pencher
+// davantage ne réduit pas la charge, il la DÉPLACE — Teng & Powers 2015 mesurent jusqu'à ~23%
+// d'absorption d'énergie en moins au genou pendant que la demande sur les extenseurs de hanche
+// grimpe fortement (0.12 vs 0.05 J·kg⁻¹). Un score unique ne peut pas représenter un transfert,
+// donc on décrit sans noter.
+const TRUNK_LEAN_MIN = 2;
+const TRUNK_LEAN_MAX = 18;
 const TIBIA_ANGLE_WARN = 10; // [DEFAULT] le principe "tibia proche de la verticale à l'attaque" est standard en réathlétisation, le seuil chiffré ne l'est pas
 const OVERSTRIDE_WARN = 0.15; // [DEFAULT] idem
 
@@ -112,6 +124,11 @@ const OVERSTRIDE_WARN = 0.15; // [DEFAULT] idem
 // ont testé ±5% et ±10% autour de la cadence librement choisie. Au-delà de +10%, on sort de ce
 // qui a été mesuré — le moteur cesse donc de créditer davantage plutôt que d'extrapoler.
 const CADENCE_EVIDENCE_WINDOW_PCT = 10; // [SOURCED]
+
+// [DEFAULT, mais dérivé d'une contrainte de mesure] Étalement de cadence minimal pour qu'une
+// comparaison entre essais ait un sens. Compter les appuis sur 30 s donne ±2 pas/min (~±1.2%) ;
+// en dessous de ~4% d'étalement total, les écarts entre essais sont dominés par le bruit.
+const MIN_CADENCE_SPREAD_PCT = 4;
 
 export function cadenceGainPct(cadenceSpm: number, selfSelectedCadenceSpm: number): number {
   return r1(100 * (cadenceSpm / selfSelectedCadenceSpm - 1));
@@ -186,12 +203,22 @@ export function validateRunTrial(trial: RunTrial, profile: RunnerProfile): Valid
 
 // ---------- Score charge (0-100, 100 = charge articulaire estimée la plus faible) ----------
 
-// [DEFAULT] pondérations de départ, à calibrer par le terrain (même statut que AERO_WEIGHTS
-// côté vélo). `overstride` et `tibia` mesurent le même phénomène par deux points différents :
-// ce n'est pas un double comptage accidentel mais une redondance voulue — deux mesures
-// indépendantes du même défaut rendent le score moins sensible à UN point mal tapé, ce qui est
-// le mode d'échec réel observé sur le terrain côté vélo.
-const CHARGE_WEIGHTS = { cadence: 0.45, overstride: 0.25, tibia: 0.15, kneeFlex: 0.15 };
+// [DEFAULT] pondérations, révisées après audit (docs/AUDIT_MOTEUR_COURSE.md §1.3, §2.1, §2.2).
+//
+// La V1 pesait cadence 0.45 / overstride 0.25 / tibia 0.15 / genou 0.15, ce qui donnait 55 points
+// d'amplitude à la forme contre 45 à la cadence. Hiérarchie inversée : la cadence porte la SEULE
+// relation solidement documentée (Heiderscheit 2011, Lenhart 2014, Schubert 2014, méta-analyse
+// Anderson 2022), tandis que les seuils de tibia et d'overstriding n'ont AUCUN équivalent publié
+// — le "0-15° = overstriding" qui circule vient d'un brevet américain, pas d'une publication.
+//
+// Correction aussi d'une justification fausse écrite en V1 : je présentais overstride et tibia
+// comme "deux mesures indépendantes du même défaut". Elles ne sont pas indépendantes de la
+// cadence — la distance pied-hanche au contact diminue d'environ 5.9% par +5 foulées/min
+// (Lieberman 2015). Les compter lourdement AMPLIFIE donc la cadence au lieu d'ajouter une
+// information, en la faisant passer par des seuils inventés plutôt que par la relation sourcée.
+// Elles restent dans le score (elles capturent une part de forme propre à l'athlète) mais avec
+// un poids qui reflète leur statut de repères non sourcés.
+const CHARGE_WEIGHTS = { cadence: 0.6, overstride: 0.15, tibia: 0.1, kneeFlex: 0.15 };
 
 export function computeChargeScore(t: RunTrial, profile: RunnerProfile): number {
   const m = t.metrics;
@@ -219,15 +246,52 @@ export function computeChargeScore(t: RunTrial, profile: RunnerProfile): number 
 
 // ---------- Score économie (0-100, relatif à la session) ----------
 
-// [DEFAULT] pondérations de départ. La composante cadence domine parce que c'est la seule des
-// trois dont le lien avec le coût métabolique est directement sourcé.
-const ECONOMY_WEIGHTS = { cadence: 0.55, verticalOscillation: 0.3, trunk: 0.15 };
+// [DEFAULT] pondérations, révisées après audit (docs/AUDIT_MOTEUR_COURSE.md §2.7).
+//
+// L'inclinaison du tronc a été RETIRÉE de ce score. Elle y pesait 0.15 alors que c'est le
+// facteur le moins soutenu des trois : Van Hooren 2024 (51 études) trouve que l'inclinaison
+// statique du tronc corrèle avec la performance, pas avec l'économie, et une intervention de
+// lean avant (PLOS One 2024) a DÉGRADÉ l'économie de course. La garder revenait à scorer un
+// facteur dont l'effet documenté va dans le sens inverse de ce que je supposais.
+//
+// L'oscillation verticale garde le poids le plus élevé après la cadence : c'est le meilleur
+// corrélat cinématique connu de l'économie (r = 0.53 chez Folland 2017 normalisé à la taille,
+// r = 0.35 dans la méta-analyse Van Hooren 2024). Nuance à ne pas oublier : ce sont des
+// corrélations observationnelles, il n'existe pas de preuve causale qu'abaisser volontairement
+// l'oscillation améliore l'économie.
+const ECONOMY_WEIGHTS = { cadence: 0.6, verticalOscillation: 0.4 };
 
-// [DEFAULT] échelle de la pénalité en U. Cavanagh & Williams 1982 donnent la FORME de la courbe
-// (coût minimal à la longueur de foulée librement choisie, coût qui remonte dans les deux sens),
-// pas une conversion "% d'écart -> points de score". Le classement relatif des essais entre eux
-// est ce qui compte ici, pas la valeur absolue du score.
+// [SOURCED] Le sommet de la courbe de coût métabolique n'est PAS à la cadence spontanée.
+// Trois sources concordantes montrent que les coureurs choisissent spontanément une foulée un
+// peu trop longue, donc une cadence un peu trop basse :
+//   - de Ruiter 2014 : novices 8% sous l'optimum, expérimentés 3% sous
+//   - Morgan 1994 : chez des coureurs peu économiques, la foulée optimale était 9.8 %LL plus
+//     courte que la spontanée
+//   - Moore 2016 : plage optimale = "préféré -3% de longueur de foulée à préféré"
+// La V1 plaçait le sommet à 0% et déclarait donc l'essai à cadence spontanée gagnant par
+// construction (cf. audit §2.6). +3% retient la valeur des coureurs EXPÉRIMENTÉS, la plus
+// conservatrice des deux — viser les 8% des novices déplacerait l'optimum bien plus loin sur la
+// foi d'une population qui n'est pas forcément celle de l'utilisateur.
+const ECONOMY_OPTIMUM_GAIN_PCT = 3;
+
+// [SOURCED] La courbe est très plate près de l'optimum : le coût au point spontané n'est que
+// d'environ 0.5% de VO2 (Cavanagh & Williams 1982), et Moore 2016 conclut qu'un écart de 3%
+// est métaboliquement trivial tandis que ~6% devient significatif. D'où une zone morte plutôt
+// qu'une pénalité qui mord dès le premier dixième de pourcent.
+const ECONOMY_FLAT_ZONE_PCT = 3;
+
+// [DEFAULT] échelle de la pénalité au-delà de la zone morte. Cavanagh & Williams donnent la
+// FORME de la courbe, pas une conversion "% d'écart -> points de score" ; et la magnitude reste
+// franchement contestée (Hafer 2015, n=6, ne trouve aucune perte d'efficacité à +10% ; la
+// méta-analyse Anderson 2022 classe la question en "very limited evidence"). Le classement
+// relatif des essais entre eux est ce qui compte, pas la valeur absolue.
 const ECONOMY_DEVIATION_SCALE = 0.35;
+
+// [SOURCED, faible] La courbe n'est pas symétrique : allonger la foulée coûte plus cher que la
+// raccourcir d'autant. Cavanagh & Williams mesurent +3.4 ml·kg⁻¹·min⁻¹ à l'extrême long contre
+// +2.6 à l'extrême court, soit un rapport d'environ 1.3 ; Högberg 1952 le dit qualitativement.
+// Aucune étude n'a formellement testé l'asymétrie de la courbe — d'où le statut "faible".
+const ECONOMY_LOW_CADENCE_FACTOR = 1.3;
 
 export function computeEconomyScore(
   t: RunTrial,
@@ -237,13 +301,13 @@ export function computeEconomyScore(
 ): number {
   const m = t.metrics;
 
-  // [SOURCED] Cavanagh & Williams 1982 (Med Sci Sports Exerc) : le coût en oxygène est minimal
-  // autour de la longueur de foulée librement choisie et augmente quand on s'en écarte dans un
-  // sens comme dans l'autre. C'est exactement ce qui OPPOSE ce score au score de charge : la
-  // charge veut plus de cadence, l'économie veut la cadence spontanée. Sans cette opposition
-  // documentée, un front de Pareto sur ces deux axes n'aurait aucun sens.
-  const deviationPct = Math.abs(cadenceGainPct(m.cadenceSpm, profile.selfSelectedCadenceSpm));
-  const cadenceComponent = 100 - quadPenalty(deviationPct, ECONOMY_DEVIATION_SCALE, 100);
+  // Écart au SOMMET de la courbe (cadence spontanée + ECONOMY_OPTIMUM_GAIN_PCT), et non à la
+  // cadence spontanée elle-même. Signe conservé : négatif = cadence plus basse que l'optimum,
+  // c'est la branche la plus coûteuse.
+  const deviation = cadenceGainPct(m.cadenceSpm, profile.selfSelectedCadenceSpm) - ECONOMY_OPTIMUM_GAIN_PCT;
+  const beyondFlatZone = Math.max(0, Math.abs(deviation) - ECONOMY_FLAT_ZONE_PCT);
+  const scale = ECONOMY_DEVIATION_SCALE * (deviation < 0 ? ECONOMY_LOW_CADENCE_FACTOR : 1);
+  const cadenceComponent = 100 - quadPenalty(beyondFlatZone, scale, 100);
 
   // Oscillation verticale : notée RELATIVEMENT aux essais de la session, jamais dans l'absolu —
   // même parti pris que le score aéro côté vélo (§5 du spec vélo), pour la même raison : on
@@ -254,30 +318,13 @@ export function computeEconomyScore(
       ? 100 * (1 - (voRatio as number) / cohortMaxVORatio)
       : 0;
 
-  const trunkMid = (TRUNK_LEAN_MIN + TRUNK_LEAN_MAX) / 2;
-  const trunkHalfRange = (TRUNK_LEAN_MAX - TRUNK_LEAN_MIN) / 2;
-  const trunkComponent = 100 - quadPenalty(Math.abs(m.trunkLeanDeg - trunkMid) - trunkHalfRange, 0.5, 100);
+  // Sans oscillation verticale mesurée, il ne reste que la cadence : le score devient une pure
+  // fonction de l'écart de cadence, ce que l'app doit dire plutôt que laisser croire que la
+  // vidéo y contribue (c'est précisément le défaut relevé à l'audit §1.1). Le drapeau
+  // vertical_oscillation_used remonte cette information jusqu'à l'écran de résultats.
+  const w = useVerticalOscillation ? ECONOMY_WEIGHTS : { cadence: 1, verticalOscillation: 0 };
 
-  // Quand l'oscillation verticale n'est pas mesurée, son poids est redistribué au prorata sur
-  // les deux autres composantes plutôt que comptée à 0. Le moteur vélo, lui, laisse la
-  // composante à 0 (cf. computeAeroScore) : c'est acceptable là-bas parce que la pénalité
-  // frappe TOUS les essais de la session identiquement, donc le classement relatif survit. Ici
-  // ce n'est pas garanti — un utilisateur peut très bien mesurer l'oscillation sur certains
-  // essais et pas sur d'autres, et les essais non mesurés seraient alors injustement pénalisés.
-  const w = useVerticalOscillation
-    ? ECONOMY_WEIGHTS
-    : (() => {
-        const rest = ECONOMY_WEIGHTS.cadence + ECONOMY_WEIGHTS.trunk;
-        return {
-          cadence: ECONOMY_WEIGHTS.cadence / rest,
-          verticalOscillation: 0,
-          trunk: ECONOMY_WEIGHTS.trunk / rest,
-        };
-      })();
-
-  return clampScore(
-    w.cadence * cadenceComponent + w.verticalOscillation * voComponent + w.trunk * trunkComponent
-  );
+  return clampScore(w.cadence * cadenceComponent + w.verticalOscillation * voComponent);
 }
 
 // ---------- Front de Pareto + sélection des 3 profils ----------
@@ -357,7 +404,14 @@ export function suggestNextRunTrial(trials: RunTrial[], profile: RunnerProfile):
         },
         {
           kind: 'form_cue',
-          message: `Buste à ${m.trunkLeanDeg}° (repère : ${TRUNK_LEAN_MIN}-${TRUNK_LEAN_MAX}°) — penche-toi légèrement plus en avant, depuis les chevilles et non depuis la taille.`,
+          // Formulation revue après audit (§2.4) : la V1 disait "penche-toi plus en avant".
+          // C'était une prescription que la littérature ne soutient pas — Teng & Powers 2015
+          // montrent que davantage d'inclinaison déplace la charge du genou vers les extenseurs
+          // de hanche plutôt que de la réduire, et une intervention de lean avant (PLOS One
+          // 2024) a dégradé l'économie. On décrit donc l'écart et ce qu'il implique, sans dire
+          // quoi faire. S'ajoute une limite de mesure : l'angle du tronc seul ne distingue pas
+          // "pencher depuis les chevilles" de "pencher depuis la taille".
+          message: `Buste à ${m.trunkLeanDeg}° (la plupart des coureurs se situent entre ${TRUNK_LEAN_MIN}° et ${TRUNK_LEAN_MAX}°). Information, pas un défaut : plus d'inclinaison soulage le genou mais charge davantage les extenseurs de hanche, moins d'inclinaison fait l'inverse.`,
         },
       ];
       const gaps = [
@@ -419,6 +473,17 @@ export function runRunningEngine(trials: RunTrial[], profile: RunnerProfile) {
     economyScore: computeEconomyScore(t, profile, cohortMaxVORatio, useVO),
   }));
 
+  // Garde-fou de SESSION, ajouté après audit (§1.2). Jusqu'ici le moteur validait chaque essai
+  // isolément mais jamais la cohérence de l'ensemble : trois essais à 168/169/170 pas/min
+  // produisaient un front de Pareto d'apparence tout à fait normale, avec des profils séparés de
+  // quelques points. Or compter N appuis sur D secondes a une précision de ±1 appui, soit
+  // ±60/D pas/min — environ ±2 pas/min (±1.2%) sur une fenêtre de 30 s. En dessous de quelques
+  // pour cent d'étalement, les écarts affichés sont du bruit de mesure présenté comme un
+  // arbitrage. Non bloquant (l'athlète peut avoir de bonnes raisons de ne pas atteindre ses
+  // cibles) mais remonté pour que l'écran de résultats puisse le dire au lieu de le taire.
+  const gains = scored.map((t) => cadenceGainPct(t.metrics.cadenceSpm, ssc));
+  const cadenceSpreadPct = r1(Math.max(...gains) - Math.min(...gains));
+
   const front = runningParetoFront(scored);
   const profiles = selectRunProfiles(front);
   const recommendedKey = profile.goal === 'charge' ? 'charge_min' : profile.goal === 'economy' ? 'economie_max' : 'equilibre';
@@ -428,6 +493,8 @@ export function runRunningEngine(trials: RunTrial[], profile: RunnerProfile) {
     trials_valid: scored.length,
     trials_excluded: excluded.length,
     vertical_oscillation_used: useVO,
+    cadence_spread_pct: cadenceSpreadPct,
+    cadence_spread_sufficient: cadenceSpreadPct >= MIN_CADENCE_SPREAD_PCT,
     recommended: recommendedKey,
     profiles: profiles && {
       charge_min: toRunOutputProfile(profiles.charge_min, profile),

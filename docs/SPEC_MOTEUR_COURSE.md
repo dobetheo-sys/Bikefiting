@@ -61,20 +61,39 @@ Compter les APPUIS (les deux pieds) sur une durée connue -> pas/min
 Piège classique : une foulée = deux appuis. Compter les foulées donne une cadence deux fois trop
 basse et fait basculer tout le scoring.
 
-**B. Image d'attaque du pied** — pour les angles
+**B. Images d'attaque du pied** — pour les angles
 ```
-Vidéo profil sur tapis -> l'athlète choisit l'image où le pied touche le sol
-  -> 6 taps : épaule, hanche, genou, cheville, talon, pointe
+Vidéo profil sur tapis -> l'athlète choisit 5 images où le pied touche le sol
+  -> 6 taps chacune : épaule, hanche, genou, cheville, talon, pointe
   -> tibia (signé), flexion genou, inclinaison tronc, ratio d'overstriding, angle de pied
+  -> MÉDIANE des 5 appuis
 ```
+**Pourquoi 5 et pas 1** (correction d'audit §2.12) : Riazati 2019 établit qu'il faut 12 à 19
+foulées pour des cinématiques sagittales stables, et Damsted 2015 — en vidéo 2D avec points
+placés à la main, exactement cette méthode — mesure des intervalles de prédiction intra-jour de
+3-8° au genou et 9-14° en inter-jour. L'incertitude d'une mesure unique était donc du même ordre
+que l'écart-type de toute la population (4,4° pour le tibia) : impossible de distinguer un
+coureur à 6° d'un coureur à 12°. 5 appuis (30 points à taper) est le compromis retenu entre
+fiabilité et charge de travail ; 12-19 représenterait ~100 points par essai, inatteignable à la
+main. Médiane et non moyenne, pour qu'un appui mal tapé soit écarté au lieu d'être intégré.
+
+**Ce que ça ne corrige pas** : moyenner réduit le bruit aléatoire, pas l'erreur systématique de
+projection 2D (caméra non perpendiculaire). Ne jamais afficher mieux que ~3° de résolution, et
+ne jamais comparer deux sessions entre elles (inter-jour 9-14°).
 Le sens de course est **déduit** de l'orientation du pied (talon → pointe), pas demandé à
 l'utilisateur ni supposé : sur tapis on peut être filmé de son côté gauche comme de son côté
 droit, et sans ça un overstriding filmé du mauvais côté serait compté comme une foulée parfaite.
 
-**C. Oscillation verticale (optionnelle)** — 2 images de plus (bassin au plus bas, au plus haut)
+**C. Oscillation verticale** — 2 images de plus (bassin au plus bas, au plus haut)
 ```
 amplitude verticale du bassin / longueur de jambe -> ratio SANS DIMENSION
 ```
+Plus optionnelle depuis l'audit : c'est le **meilleur corrélat cinématique connu de l'économie**
+(r = 0,53 chez Folland 2017 normalisé à la taille ; r = 0,35 dans la méta-analyse Van Hooren
+2024), et sans elle le score d'économie n'est qu'une reformulation de l'écart de cadence,
+n'utilisant aucune mesure vidéo (§1.1 de l'audit). Nuance à garder : ce sont des corrélations
+observationnelles, il n'existe **pas de preuve causale** qu'abaisser volontairement l'oscillation
+améliore l'économie.
 Volontairement un ratio et non des centimètres : ça supprime complètement l'étape de calibration
 cm/px, qui est la source d'erreur qui a le plus coûté côté vélo (pFSA mesurée à 2.9 cm² au lieu
 de quelques milliers, cf. `CalibrationRef`).
@@ -120,8 +139,12 @@ Profil athlète requis :
 ## 4. Couche 2 — Score charge (0-100, 100 = charge estimée la plus faible)
 
 ```
-charge = 0.45 × cadence + 0.25 × overstriding + 0.15 × tibia + 0.15 × flexion_genou
+charge = 0.60 × cadence + 0.15 × overstriding + 0.10 × tibia + 0.15 × flexion_genou
 ```
+
+> Pondérations révisées après audit. La V1 (0.45/0.25/0.15/0.15) donnait 55 points d'amplitude
+> aux seuils de forme — non sourcés — contre 45 à la cadence, seule relation solidement
+> documentée. La hiérarchie était inversée.
 
 Composante cadence, ancrée sur Heiderscheit et al. 2011 (±5% et ±10% autour de la cadence
 spontanée) :
@@ -131,9 +154,12 @@ spontanée) :
 **L'échelle sature à ±10% parce que c'est la fenêtre effectivement testée.** Au-delà, le moteur
 cesse de créditer plutôt que d'extrapoler une relation hors de son domaine de validité.
 
-`overstriding` et `tibia` mesurent le même phénomène par deux points différents. Ce n'est pas un
-double comptage accidentel : deux mesures indépendantes du même défaut rendent le score moins
-sensible à **un** point mal tapé, qui est le mode d'échec réellement observé sur le terrain.
+`overstriding` et `tibia` mesurent le même phénomène par deux points différents. La V1 présentait
+ça comme « deux mesures indépendantes » : c'est **faux**, et l'audit l'a corrigé. Elles ne sont
+pas indépendantes de la cadence — la distance pied-hanche au contact diminue d'environ 5,9% par
++5 foulées/min (Lieberman 2015). Les peser lourdement revenait donc à faire passer l'effet de la
+cadence par des seuils inventés plutôt que par la relation sourcée. Elles restent dans le score
+avec un poids qui reflète leur statut de repères non sourcés.
 
 Pénalités quadratiques, mêmes raisons qu'au §4 du spec vélo.
 
@@ -142,13 +168,31 @@ Pénalités quadratiques, mêmes raisons qu'au §4 du spec vélo.
 ## 5. Couche 3 — Score économie (0-100, relatif à la session)
 
 ```
-économie = 0.55 × écart_cadence + 0.30 × oscillation_verticale + 0.15 × tronc
+économie = 0.60 × écart_cadence + 0.40 × oscillation_verticale
 ```
 
 Composante dominante ancrée sur Cavanagh & Williams 1982 : le coût en oxygène est minimal autour
-de la longueur de foulée librement choisie et remonte **dans les deux sens**. C'est exactement ce
-qui oppose ce score au score de charge — sans cette opposition documentée, le front de Pareto
-n'aurait pas de sens.
+d'une longueur de foulée optimale et remonte **dans les deux sens**. C'est ce qui oppose ce score
+au score de charge — sans cette opposition documentée, le front de Pareto n'aurait pas de sens.
+
+**Trois corrections majeures apportées par l'audit :**
+
+1. **Le sommet n'est pas à la cadence spontanée, mais ~3% au-dessus.** Trois sources concordantes
+   (de Ruiter 2014 : novices 8% sous l'optimum, expérimentés 3% sous ; Morgan 1994 ; Moore 2016)
+   montrent que les coureurs choisissent spontanément une foulée un peu trop longue. La V1
+   plaçait le sommet à 0% et déclarait donc l'essai à cadence spontanée gagnant par construction.
+2. **Zone plate de ±3% autour du sommet.** La courbe est très plate près de l'optimum (~0,5% de
+   VO2 au point spontané) ; un écart de 3% est métaboliquement trivial, ~6% devient significatif.
+3. **Pénalité asymétrique** : la branche basse-cadence est ~1,3× plus raide (Cavanagh & Williams :
+   +3,4 vs +2,6 ml·kg⁻¹·min⁻¹ aux deux extrêmes ; Högberg 1952). Aucune étude n'a formellement
+   testé l'asymétrie — statut « sourcé, faible ».
+
+**L'inclinaison du tronc a été retirée de ce score.** Elle y pesait 0,15 alors que c'est le
+facteur le moins soutenu : Van Hooren 2024 (51 études) trouve que l'inclinaison statique corrèle
+avec la *performance*, pas l'économie, et une intervention de lean avant (PLOS One 2024) a
+**dégradé** l'économie. Elle reste mesurée et affichée comme repère descriptif, jamais notée —
+d'autant que pencher davantage ne réduit pas la charge mais la **déplace** du genou vers les
+extenseurs de hanche (Teng & Powers 2015).
 
 L'oscillation verticale est notée **relativement aux essais de la session**, jamais dans l'absolu
 — même parti pris que le score aéro côté vélo, pour la même raison : on classe les essais de CE
@@ -190,12 +234,11 @@ Ce n'est pas codé en dur : c'est ce que le calcul retourne.
 
 ## 7. Table de confiance des sources
 
-> **Audité le 12/08/2026 — voir `docs/AUDIT_MOTEUR_COURSE.md`.** Plusieurs lignes ci-dessous
-> sont contredites ou nuancées par cet audit, en particulier : le sommet de la courbe d'économie
-> n'est pas à la cadence spontanée (§2.6), la pénalité d'économie devrait être asymétrique
-> (§2.8), l'inclinaison du tronc est mal soutenue comme facteur d'économie (§2.4), et aucun
-> seuil publié n'existe pour le tibia ni l'overstriding (§2.1, §2.2). Les corrections engageant
-> les recommandations du moteur n'ont pas encore été appliquées.
+> **Audité le 12/08/2026 — voir `docs/AUDIT_MOTEUR_COURSE.md`, corrections appliquées.**
+> Ce qui reste non sourcé et doit être lu comme tel : les seuils de tibia (10°) et d'overstriding
+> (0.15) n'ont **aucun équivalent publié** — le « 0-15° » qui circule vient d'un brevet
+> américain, pas d'une publication (§2.1, §2.2). La magnitude de la pénalité d'économie n'est pas
+> calibrée (§2.8). Toutes les pondérations restent des hypothèses d'ingénierie.
 
 
 | Élément | Statut | Source |
