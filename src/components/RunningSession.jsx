@@ -575,6 +575,8 @@ const VIOLATION_LABELS = {
   invalid_measurement: (v) => 'Mesure invalide (deux points confondus sur l’image)',
   speed_mismatch: (v) => `Filmé à ${v.value} km/h au lieu de ${v.bound} km/h — non comparable aux autres essais`,
   cadence_implausible: (v) => `Cadence de ${v.value} pas/min invraisemblable — appuis ou durée probablement mal comptés`,
+  vertical_oscillation_implausible: (v) =>
+    `Oscillation verticale de ${v.value} impossible physiquement — les deux points de bassin ont probablement été placés sur les mauvaises images, ou au mauvais endroit`,
 };
 
 const WARNING_LABELS = {
@@ -723,6 +725,28 @@ function RunResultsScreen({ result, profile, onBack }) {
           />
         ))}
       </div>
+
+      {/* Le résultat le plus actionnable que le moteur puisse produire, et il aurait été
+          silencieux : quand l'essai à cadence spontanée est dominé, ça veut dire qu'un autre
+          essai est à la fois moins chargé ET au moins aussi économique que la foulée naturelle
+          de l'athlète. Depuis la correction du sommet de la courbe d'économie, ce cas arrive
+          dans la majorité des sessions — le taire reviendrait à faire filmer dix minutes pour
+          jeter l'essai sans rien en dire. */}
+      {result.baseline_dominated && (
+        <div className="rounded-card border border-cyan/30 bg-cyan/5 p-4 mb-6">
+          <div className="text-xs tracking-widest text-cyan uppercase mb-1 font-mono">Ce que dit ce bilan</div>
+          <p className="text-sm text-cyan/90 leading-relaxed">
+            Ta cadence spontanée ({result.baseline_cadence_spm} pas/min) est battue sur les deux
+            tableaux à la fois : au moins un des essais plus rapides est à la fois moins chargé et
+            au moins aussi économique.
+          </p>
+          <p className="text-xs text-cyan/70 mt-1.5 leading-relaxed">
+            C'est cohérent avec la littérature : les coureurs choisissent spontanément une foulée
+            un peu trop longue, l'optimum métabolique se situant quelques pour cent plus haut en
+            cadence. Monter un peu ne te coûte donc rien — et allège les articulations.
+          </p>
+        </div>
+      )}
 
       {/* Garde-fou de session (cf. audit §1.2) : sans étalement de cadence suffisant, les écarts
           entre profils sont du bruit de mesure. Affiché en tête des résultats plutôt qu'en note

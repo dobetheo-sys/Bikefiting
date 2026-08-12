@@ -192,21 +192,17 @@ describe('runRunningEngine — pipeline complet, balayage de cadence', () => {
   test('économie maximale = essai à +5%, plus l\'essai spontané (qui est désormais dominé)', () => {
     if (result.status !== 'ok') throw new Error('précondition non remplie');
     assert.equal(result.profiles?.economie_max.trial_id, 't_plus5');
-    const surLeFront = [
-      result.profiles?.charge_min.trial_id,
-      result.profiles?.equilibre.trial_id,
-      result.profiles?.economie_max.trial_id,
-    ];
-    assert.equal(surLeFront.includes('t_libre'), false);
+    assert.equal(result.baseline_dominated, true);
+    assert.equal(result.baseline_cadence_spm, 168);
   });
 
-  test('le front garde bien deux essais distincts (pas un front dégénéré à un seul point)', () => {
+  test('front à 2 points -> pas d\'"équilibré" arbitraire, et la reco bascule sur charge_min', () => {
+    // Avec deux extrêmes et rien entre les deux, il n'y a pas de compromis à désigner. Étiqueter
+    // l'un des deux "équilibré" serait un choix arbitraire présenté comme un résultat.
     if (result.status !== 'ok') throw new Error('précondition non remplie');
-    const ids = new Set([
-      result.profiles?.charge_min.trial_id,
-      result.profiles?.equilibre.trial_id,
-      result.profiles?.economie_max.trial_id,
-    ]);
+    assert.equal(result.profiles?.equilibre, null);
+    assert.equal(result.recommended, 'charge_min');
+    const ids = new Set([result.profiles?.charge_min.trial_id, result.profiles?.economie_max.trial_id]);
     assert.equal(ids.size, 2);
   });
 
@@ -216,13 +212,62 @@ describe('runRunningEngine — pipeline complet, balayage de cadence', () => {
     assert.equal(result.cadence_spread_pct, 10.1);
   });
 
-  test('recommandation par défaut = équilibré ; goal la déplace sans changer aucun score', () => {
+  test('goal déplace la recommandation sans changer aucun score', () => {
     if (result.status !== 'ok') throw new Error('précondition non remplie');
-    assert.equal(result.recommended, 'equilibre');
-    const charge = runRunningEngine(trials, { ...profile, goal: 'charge' });
-    if (charge.status !== 'ok') throw new Error('précondition non remplie');
-    assert.equal(charge.recommended, 'charge_min');
-    assert.equal(charge.profiles?.equilibre.charge_score, result.profiles?.equilibre.charge_score);
+    const eco = runRunningEngine(trials, { ...profile, goal: 'economy' });
+    if (eco.status !== 'ok') throw new Error('précondition non remplie');
+    assert.equal(eco.recommended, 'economie_max');
+    assert.equal(eco.profiles?.charge_min.charge_score, result.profiles?.charge_min.charge_score);
+  });
+});
+
+// BUG CORRIGÉ (introduit en réparant l'axe économie) : les deux axes n'ont pas la même échelle
+// atteignable — la charge est absolue et peut atteindre 100, l'économie contient une composante
+// notée relativement à la session où le pire essai reçoit 0, donc le meilleur plafonne bien plus
+// bas. Mesurer la distance au point brut (100,100) revenait alors à "le plus proche de 100 en
+// charge", et "équilibré" désignait systématiquement le même essai que charge_min.
+describe('selectRunProfiles — les deux axes doivent être renormalisés avant de comparer', () => {
+  const withVO = (id: string, c: number, vo: number) =>
+    mkTrial(id, c, { verticalOscillationRatio: vo });
+
+  test('sur un front à 3 points, "équilibré" n\'est ni charge_min ni economie_max', () => {
+    // Oscillations choisies pour que les 3 essais restent non dominés : l'ordre sur l'axe
+    // économie (lent > moyen > rapide) doit être l'inverse de l'ordre sur l'axe charge.
+    const r = runRunningEngine(
+      [withVO('lent', 160, 0.08), withVO('moyen', 176, 0.11), withVO('rapide', 185, 0.13)],
+      profile
+    );
+    assert.equal(r.status, 'ok');
+    if (r.status !== 'ok') return;
+    const eq = r.profiles?.equilibre?.trial_id;
+    assert.ok(eq, 'un front à 3 points doit produire un "équilibré"');
+    assert.notEqual(eq, r.profiles?.charge_min.trial_id);
+    assert.notEqual(eq, r.profiles?.economie_max.trial_id);
+  });
+});
+
+// Même famille de garde-fou que la cadence invraisemblable : sans lui, deux taps de bassin mal
+// placés faussaient le score d'économie de TOUS les essais, la composante d'oscillation étant
+// notée relativement au maximum de la session.
+describe('validateRunTrial — oscillation verticale hors de portée physique', () => {
+  test('ratio 0.55 (bassin montant de plus d\'une demi-jambe) -> essai exclu', () => {
+    const v = validateRunTrial(mkTrial('t', 176, { verticalOscillationRatio: 0.55 }), profile);
+    assert.equal(v.valid, false);
+    assert.equal(v.violations[0]?.param, 'vertical_oscillation_implausible');
+  });
+
+  test('ratio 0.005 (quasi nul) -> essai exclu', () => {
+    const v = validateRunTrial(mkTrial('t', 176, { verticalOscillationRatio: 0.005 }), profile);
+    assert.equal(v.valid, false);
+    assert.equal(v.violations[0]?.param, 'vertical_oscillation_implausible');
+  });
+
+  test('ratio plausible (0.10) -> essai valide', () => {
+    assert.equal(validateRunTrial(mkTrial('t', 176, { verticalOscillationRatio: 0.1 }), profile).valid, true);
+  });
+
+  test('oscillation non mesurée -> aucune violation (elle reste optionnelle)', () => {
+    assert.equal(validateRunTrial(mkTrial('t', 176), profile).valid, true);
   });
 });
 

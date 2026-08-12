@@ -96,6 +96,13 @@ const SPEED_TOLERANCE_KMH = 0.3; // [DEFAULT] sur tapis l'allure est exacte ; to
 const CADENCE_PLAUSIBLE_MIN = 130;
 const CADENCE_PLAUSIBLE_MAX = 220;
 
+// [DEFAULT] Bornes de plausibilité physique du ratio d'oscillation verticale (amplitude
+// verticale du bassin / longueur de jambe). Une oscillation typique de 6-11 cm sur une jambe
+// d'environ 90 cm donne 0.07-0.12 ; ces bornes sont volontairement larges pour n'attraper que
+// l'erreur de mesure franche, pas une foulée inhabituelle.
+const VO_PLAUSIBLE_MIN = 0.02;
+const VO_PLAUSIBLE_MAX = 0.3;
+
 // Seuils d'AVERTISSEMENT — jamais exclusoires.
 // [SOURCED, indicatif] Flexion typique au contact : 15-25° (corrigé à l'audit — la V1 annonçait
 // 10-20°). Le seuil à 10° n'avertit donc que ~0.6% des coureurs : c'est un détecteur de valeur
@@ -168,6 +175,22 @@ export function validateRunTrial(trial: RunTrial, profile: RunnerProfile): Valid
   // Cadence aberrante = erreur de comptage (pas assez d'appuis comptés, durée mal saisie),
   // pas une foulée exotique. On exclut pour protéger le reste du calcul, qui est entièrement
   // relatif à la cadence.
+  // Même famille de garde-fou que la cadence : une oscillation verticale hors de portée
+  // physique signale deux taps de bassin mal placés (ou placés sur des images qui ne sont pas
+  // celles du point haut et du point bas), pas une foulée exotique. Une oscillation typique est
+  // de 6-11 cm pour une jambe d'environ 90 cm, soit un ratio de 0.07-0.12 ; en dehors de
+  // [0.02, 0.30] la mesure n'a pas de sens physique. Sans ce test, un ratio de 0.55 était accepté
+  // en silence et faussait le score d'économie de TOUS les essais de la session, puisque la
+  // composante d'oscillation est notée relativement au maximum de la session.
+  const vo = m.verticalOscillationRatio;
+  if (vo !== undefined && (!Number.isFinite(vo) || vo < VO_PLAUSIBLE_MIN || vo > VO_PLAUSIBLE_MAX)) {
+    violations.push({
+      param: 'vertical_oscillation_implausible',
+      value: Number.isFinite(vo) ? (vo as number) : NaN,
+      bound: (vo as number) < VO_PLAUSIBLE_MIN ? VO_PLAUSIBLE_MIN : VO_PLAUSIBLE_MAX,
+    });
+  }
+
   if (m.cadenceSpm < CADENCE_PLAUSIBLE_MIN) {
     violations.push({ param: 'cadence_implausible', value: m.cadenceSpm, bound: CADENCE_PLAUSIBLE_MIN });
   } else if (m.cadenceSpm > CADENCE_PLAUSIBLE_MAX) {
@@ -342,12 +365,38 @@ export function selectRunProfiles(front: ScoredRunTrial[]) {
   if (front.length === 0) return null;
   const chargeMin = [...front].sort((a, b) => b.chargeScore - a.chargeScore)[0];
   const economieMax = [...front].sort((a, b) => b.economyScore - a.economyScore)[0];
-  const equilibre = [...front].sort((a, b) => distToIdeal(a) - distToIdeal(b))[0];
+
+  // "Équilibré" n'a de sens qu'avec au moins 3 points sur le front : avec 2, il n'y a pas de
+  // milieu, seulement deux extrêmes, et désigner l'un des deux comme le compromis serait
+  // arbitraire. On l'omet plutôt que d'étiqueter au hasard.
+  const equilibre = front.length >= 3 ? [...front].sort((a, b) => distToIdeal(a, front) - distToIdeal(b, front))[0] : null;
+
   return { charge_min: chargeMin, equilibre, economie_max: economieMax };
 }
 
-function distToIdeal(t: ScoredRunTrial): number {
-  return Math.hypot(100 - t.chargeScore, 100 - t.economyScore);
+// Distance au point idéal, calculée sur des axes RENORMALISÉS.
+//
+// BUG CORRIGÉ (introduit en réparant l'axe économie) : la version précédente mesurait la
+// distance au point brut (100,100). Or les deux axes n'ont pas la même échelle atteignable. Le
+// score de charge est absolu et peut atteindre 100 ; le score d'économie contient une composante
+// d'oscillation verticale notée relativement à la session, où le pire essai reçoit 0 par
+// construction — le meilleur essai d'une session plafonne donc typiquement autour de 70.
+// Résultat : "le plus proche de (100,100)" revenait à "le plus proche de 100 en charge", et
+// l'essai équilibré désignait systématiquement le même que charge_min. Vérifié sur le jeu de
+// test : équilibré et charge minimale tombaient sur le même essai.
+//
+// Renormaliser chaque axe sur son étendue observée SUR LE FRONT rend les deux comparables et
+// redonne à "équilibré" son sens : le meilleur compromis entre les candidats réellement
+// disponibles, pas la proximité d'un point que l'un des deux axes ne peut pas atteindre.
+function distToIdeal(t: ScoredRunTrial, front: ScoredRunTrial[]): number {
+  const norm = (value: number, all: number[]) => {
+    const min = Math.min(...all);
+    const max = Math.max(...all);
+    return max === min ? 1 : (value - min) / (max - min);
+  };
+  const nCharge = norm(t.chargeScore, front.map((x) => x.chargeScore));
+  const nEconomy = norm(t.economyScore, front.map((x) => x.economyScore));
+  return Math.hypot(1 - nCharge, 1 - nEconomy);
 }
 
 // ---------- Suggestion de l'essai suivant ----------
@@ -486,7 +535,22 @@ export function runRunningEngine(trials: RunTrial[], profile: RunnerProfile) {
 
   const front = runningParetoFront(scored);
   const profiles = selectRunProfiles(front);
-  const recommendedKey = profile.goal === 'charge' ? 'charge_min' : profile.goal === 'economy' ? 'economie_max' : 'equilibre';
+
+  // L'essai à cadence spontanée est-il dominé ? Ce n'est pas un raté du protocole mais le
+  // résultat le plus actionnable que le moteur puisse produire : il signifie qu'un autre essai
+  // est à la fois moins chargé ET au moins aussi économique que la foulée naturelle de
+  // l'athlète. Depuis que le sommet de la courbe d'économie est correctement placé (~+3%), ce
+  // cas arrive dans la majorité des sessions — le taire reviendrait à faire filmer un essai de
+  // dix minutes pour le jeter en silence.
+  const baseline = scored.find(
+    (t) => Math.abs(cadenceGainPct(t.metrics.cadenceSpm, ssc)) <= SWEEP_MATCH_TOLERANCE_PCT
+  );
+  const baselineDominated = baseline ? !front.some((t) => t.id === baseline.id) : false;
+
+  // Fallback si "équilibré" n'existe pas (front à moins de 3 points, cf. selectRunProfiles) :
+  // sans objectif déclaré on met en avant la charge minimale, qui est l'axe le mieux documenté.
+  const preferredKey = profile.goal === 'charge' ? 'charge_min' : profile.goal === 'economy' ? 'economie_max' : 'equilibre';
+  const recommendedKey = preferredKey === 'equilibre' && !profiles?.equilibre ? 'charge_min' : preferredKey;
 
   return {
     status: 'ok' as const,
@@ -495,10 +559,12 @@ export function runRunningEngine(trials: RunTrial[], profile: RunnerProfile) {
     vertical_oscillation_used: useVO,
     cadence_spread_pct: cadenceSpreadPct,
     cadence_spread_sufficient: cadenceSpreadPct >= MIN_CADENCE_SPREAD_PCT,
+    baseline_dominated: baselineDominated,
+    baseline_cadence_spm: baseline?.metrics.cadenceSpm,
     recommended: recommendedKey,
     profiles: profiles && {
       charge_min: toRunOutputProfile(profiles.charge_min, profile),
-      equilibre: toRunOutputProfile(profiles.equilibre, profile),
+      equilibre: profiles.equilibre ? toRunOutputProfile(profiles.equilibre, profile) : null,
       economie_max: toRunOutputProfile(profiles.economie_max, profile),
     },
     excluded_trials: excluded,
