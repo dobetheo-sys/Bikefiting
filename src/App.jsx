@@ -249,42 +249,36 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
   // "Commencer" doit rester ancré en bas et visible sans avoir à tout faire défiler
   // d'abord — Shell est partagé par des écrans qui, eux, comptent sur min-h-screen.
   return (
-    <div
-      className="w-full h-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden"
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
-    >
+    <div className="w-full h-screen bg-bg text-text font-sans flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto">
         <div className="px-6 pt-10 pb-8 max-w-md mx-auto w-full">
-          <div className="text-xs tracking-widest text-amber-400 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Bilan posture aéro
-          </div>
-          <h1 className="text-2xl font-semibold text-neutral-100 leading-snug mb-2">Avant de commencer</h1>
-          <p className="text-neutral-400 text-sm leading-relaxed mb-8">
+          <div className="text-xs tracking-widest text-gold uppercase mb-2 font-mono">Bilan posture aéro</div>
+          {/* Titre héros court (2 mots) : seul h1 de l'app à recevoir le traitement display
+              Zenna (Bebas Neue + léger skew) — cf. commentaire sur ScreenShell : les autres
+              titres accueillent des phrases trop longues pour cette police condensée. */}
+          <h1 className="font-display text-4xl -skew-x-[4deg] inline-block leading-snug mb-2">Avant de commencer</h1>
+          <p className="text-text-dim text-sm leading-relaxed mb-8">
             Compte 10-15 minutes, seul avec ton vélo et ton téléphone. Voici exactement ce qui va se passer et ce qu'il te faut.
           </p>
 
-          <h2 className="text-xs tracking-widest text-neutral-500 uppercase mb-3" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Le déroulé
-          </h2>
+          <h2 className="text-xs tracking-widest text-text-faint uppercase mb-3 font-mono">Le déroulé</h2>
           <div className="space-y-3 mb-8">
-            <StepCard icon={Ruler} step="1" title="Test de souplesse" duration="~1 min" accent="bg-cyan-400/10 text-cyan-300">
+            <StepCard icon={Ruler} step="1" title="Test de souplesse" duration="~1 min" accent="bg-cyan/10 text-cyan">
               Allongé au sol, tu lèves une jambe tendue le plus haut possible. Ça calibre la limite de fermeture de
               hanche que ta position sur le vélo doit respecter — sans ça, impossible de scorer tes essais.
             </StepCard>
-            <StepCard icon={Bike} step="2" title="Essais sur le vélo" duration="~2-3 min par essai" accent="bg-amber-400/10 text-amber-300">
+            <StepCard icon={Bike} step="2" title="Essais sur le vélo" duration="~2-3 min par essai" accent="bg-orange/10 text-orange-tint">
               Pour chaque réglage que tu veux comparer (hauteur de selle, reach, drop…) : une courte vidéo de profil
               en pédalant, puis une photo de face avec étalonnage. Répète pour au moins 3 essais différents.
             </StepCard>
-            <StepCard icon={CheckCircle2} step="3" title="Résultats" accent="bg-pink-400/10 text-pink-300">
+            <StepCard icon={CheckCircle2} step="3" title="Résultats" accent="bg-gold/10 text-gold">
               Un score confort et un score aéro pour chaque essai, et une sélection automatique de tes 3 meilleures
               positions : confort max, équilibré, aéro max.
             </StepCard>
           </div>
 
-          <h2 className="text-xs tracking-widest text-neutral-500 uppercase mb-3" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Matériel nécessaire
-          </h2>
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900 px-4 mb-8">
+          <h2 className="text-xs tracking-widest text-text-faint uppercase mb-3 font-mono">Matériel nécessaire</h2>
+          <div className="rounded-card border border-border bg-surface px-4 mb-8">
             <GearItem icon={Smartphone} title="Un smartphone avec appareil photo">
               Celui que tu utilises là, ça marche.
             </GearItem>
@@ -302,8 +296,8 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
             </GearItem>
           </div>
 
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-4 mb-4">
-            <p className="text-xs text-neutral-500 leading-relaxed">
+          <div className="rounded-card border border-border bg-surface/50 p-4 mb-4">
+            <p className="text-xs text-text-faint leading-relaxed">
               Méthode basée sur un protocole terrain publié (Debraux et al. 2009) pour la mesure de surface frontale,
               et sur le test clinique ASLR pour la souplesse de hanche — pas juste une estimation à l'œil.
             </p>
@@ -311,8 +305,8 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
 
           <PrivacyNote className="mb-4" />
 
-          <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-4 mb-8">
-            <p className="text-xs text-amber-200/80 leading-relaxed">
+          <div className="rounded-card border border-gold/20 bg-gold/5 p-4 mb-8">
+            <p className="text-xs text-gold/80 leading-relaxed">
               Cet outil ne remplace pas l'avis d'un bikefitter professionnel ni un avis médical. Arrête immédiatement
               un mouvement si ça tire ou fait mal, en particulier pendant le test de souplesse.
             </p>
@@ -320,18 +314,18 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
         </div>
       </div>
 
-      <div className="px-6 py-5 border-t border-neutral-800 bg-neutral-950">
+      <div className="px-6 py-5 border-t border-border bg-bg">
         <div className="max-w-md mx-auto w-full space-y-3">
           <button
             onClick={onStart}
-            className="w-full py-3.5 rounded-lg bg-amber-400 text-neutral-950 font-medium focus:outline-none focus:ring-2 focus:ring-amber-200 flex items-center justify-center gap-2"
+            className="w-full py-3.5 rounded-control bg-gold text-ink font-semibold focus:outline-none focus:ring-2 focus:ring-cyan flex items-center justify-center gap-2"
           >
             Commencer le bilan <ArrowRight className="w-4 h-4" />
           </button>
           {historyCount > 0 && (
             <button
               onClick={onViewHistory}
-              className="w-full flex items-center justify-center gap-2 py-2 text-sm text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+              className="w-full flex items-center justify-center gap-2 py-2 text-sm text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded"
             >
               <History className="w-3.5 h-3.5" /> Voir {historyCount > 1 ? `mes ${historyCount} bilans précédents` : 'mon bilan précédent'}
             </button>
@@ -377,7 +371,7 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
   return (
     <ScreenShell
       eyebrow="Test de souplesse (ASLR)"
-      eyebrowColor="text-cyan-400"
+      eyebrowColor="text-cyan"
       title="Résultat"
       footer={
         <>
@@ -391,28 +385,26 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
               )
             }
             disabled={!heightValid}
-            className="w-full py-3 rounded-lg bg-cyan-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan-200 flex items-center justify-center gap-2"
+            className="w-full py-3 rounded-control bg-cyan text-ink font-semibold disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gold flex items-center justify-center gap-2"
           >
             Continuer <ArrowRight className="w-4 h-4" />
           </button>
           <button
             onClick={onRetakeAslr}
-            className="w-full flex items-center justify-center gap-2 py-2 text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded"
+            className="w-full flex items-center justify-center gap-2 py-2 text-sm text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-cyan rounded"
           >
             <RotateCcw className="w-3.5 h-3.5" /> Refaire le test de souplesse
           </button>
         </>
       }
     >
-      <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 mb-6 mt-4">
-        <div className="text-3xl font-semibold text-cyan-300" style={{ fontFamily: 'ui-monospace, monospace' }}>
-          {aslrAngle}°
-        </div>
-        <p className="text-xs text-neutral-500 mt-2">
+      <div className="rounded-card border border-border bg-surface p-4 mb-6 mt-4">
+        <div className="font-display text-5xl text-cyan">{aslrAngle}°</div>
+        <p className="text-xs text-text-faint mt-2">
           Score de souplesse : {flexScore}/5 (seuil clinique de tightness = 80°, cf. spec §3.1).
         </p>
         {aslrKneeAngle != null && (
-          <p className="text-xs text-neutral-500 mt-2">
+          <p className="text-xs text-text-faint mt-2">
             Genou mesuré à {aslrKneeAngle}° au moment de la levée
             {aslrKneeAngle < KNEE_STRAIGHT_THRESHOLD ? ' (un peu plié — si le résultat te semble faux, refais le test).' : ' (bien tendu).'}
           </p>
@@ -432,13 +424,13 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
       </div>
 
       <div className="mb-6">
-        <div className="text-sm text-neutral-200 mb-1.5">Objectif de la position</div>
+        <div className="text-sm text-text mb-1.5">Objectif de la position</div>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={() => setGoal('aero')}
-            className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
-              goal === 'aero' ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+            className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-gold ${
+              goal === 'aero' ? 'bg-gold border-gold text-ink font-semibold' : 'border-border text-text-dim'
             }`}
           >
             Aéro
@@ -446,14 +438,14 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
           <button
             type="button"
             onClick={() => setGoal('comfort')}
-            className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
-              goal === 'comfort' ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+            className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-gold ${
+              goal === 'comfort' ? 'bg-gold border-gold text-ink font-semibold' : 'border-border text-text-dim'
             }`}
           >
             Confort
           </button>
         </div>
-        <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
+        <p className="text-xs text-text-faint mt-1 leading-relaxed">
           {goal === 'aero'
             ? "Position TT/tri très couchée : tronc entre 5° et 15°, genou entre 137° et 150° restent des critères qui excluent un essai s'ils ne sont pas respectés (plage sourcée, cf. spec)."
             : "Position route classique, plus redressée et facile à régler : tronc et genou deviennent des repères informatifs plutôt que des critères d'exclusion (pas de plage \"confort\" universelle à imposer). La hanche (plancher 40°, perte de puissance mesurée) reste, elle, un critère dur dans les deux cas."}
@@ -461,14 +453,10 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
       </div>
 
       {referenceSaddleHeightCm && (
-        <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-6">
-          <div className="text-xs tracking-widest text-cyan-300 uppercase mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Hauteur de selle de référence
-          </div>
-          <div className="text-2xl font-semibold text-cyan-200" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            {referenceSaddleHeightCm} cm
-          </div>
-          <p className="text-xs text-cyan-100/70 mt-1 leading-relaxed">
+        <div className="rounded-card border border-cyan/20 bg-cyan/5 p-4 mb-6">
+          <div className="text-xs tracking-widest text-cyan uppercase mb-1 font-mono">Hauteur de selle de référence</div>
+          <div className="font-display text-4xl text-cyan">{referenceSaddleHeightCm} cm</div>
+          <p className="text-xs text-cyan/70 mt-1 leading-relaxed">
             Du pédalier au haut de la selle, le long du tube de selle (formule LeMond, entrejambe × 0,883). Un point de
             départ documenté si tu pars de zéro — pas une prescription, ajuste ensuite selon ton ressenti.
           </p>
@@ -613,19 +601,15 @@ function TrialStepRow({ icon: Icon, title, consigne, done, summary, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 p-4 text-left rounded-lg border border-neutral-800 bg-neutral-900 hover:border-amber-400/50 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors"
+      className="w-full flex items-center gap-3 p-4 text-left rounded-card border border-border bg-surface hover:border-gold/50 focus:outline-none focus:ring-2 focus:ring-gold transition-colors"
     >
-      {done ? (
-        <CheckCircle2 className="w-5 h-5 text-cyan-400 shrink-0" />
-      ) : (
-        <Circle className="w-5 h-5 text-neutral-700 shrink-0" />
-      )}
-      <Icon className="w-4 h-4 text-neutral-500 shrink-0" />
+      {done ? <CheckCircle2 className="w-5 h-5 text-cyan shrink-0" /> : <Circle className="w-5 h-5 text-border shrink-0" />}
+      <Icon className="w-4 h-4 text-text-faint shrink-0" />
       <div className="min-w-0 flex-1">
-        <div className="font-medium text-neutral-100 text-sm">{title}</div>
-        <p className="text-xs text-neutral-500 mt-0.5 truncate">{done ? summary : consigne}</p>
+        <div className="font-medium text-text text-sm">{title}</div>
+        <p className="text-xs text-text-faint mt-0.5 truncate">{done ? summary : consigne}</p>
       </div>
-      <ChevronRight className="w-4 h-4 text-neutral-400 shrink-0" />
+      <ChevronRight className="w-4 h-4 text-text-faint shrink-0" />
     </button>
   );
 }
@@ -646,13 +630,13 @@ function TrialOverview({ trialNumber, pendingTrial, onOpenVideo, onOpenPhoto, on
           <button
             onClick={onSave}
             disabled={!allDone}
-            className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
+            className="w-full py-3 rounded-control bg-gold text-ink font-semibold disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan"
           >
             Enregistrer cet essai
           </button>
           <button
             onClick={onCancel}
-            className="w-full text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+            className="w-full text-sm text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded"
           >
             Annuler cet essai
           </button>
@@ -662,9 +646,7 @@ function TrialOverview({ trialNumber, pendingTrial, onOpenVideo, onOpenPhoto, on
       <div className="mb-1 mt-3">
         <ProgressBar value={doneCount} max={3} />
       </div>
-      <p className="text-neutral-400 text-sm mb-6" style={{ fontFamily: 'ui-monospace, monospace' }}>
-        {doneCount}/3 complétées
-      </p>
+      <p className="text-text-dim text-sm mb-6 font-mono">{doneCount}/3 complétées</p>
 
       <div className="space-y-3 mb-8">
         <TrialStepRow
@@ -863,11 +845,9 @@ function BikeDeltasDiagram() {
 // absolues). L'app compare les essais entre eux automatiquement.
 function TrialDeltasGuidance() {
   return (
-    <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-6">
-      <h2 className="text-xs tracking-widest text-cyan-300 uppercase mb-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
-        Entre 2 essais, quoi changer ?
-      </h2>
-      <ul className="text-xs text-cyan-100/80 space-y-1.5 leading-relaxed">
+    <div className="rounded-card border border-cyan/20 bg-cyan/5 p-4 mb-6">
+      <h2 className="text-xs tracking-widest text-cyan uppercase mb-2 font-mono">Entre 2 essais, quoi changer ?</h2>
+      <ul className="text-xs text-cyan/80 space-y-1.5 leading-relaxed">
         <li>• Mesure et note tes valeurs actuelles, telles quelles sur le vélo — pas besoin de calculer une différence, l'app s'en charge.</li>
         <li>• D'un essai à l'autre, change un seul réglage à la fois — sinon impossible de savoir lequel a fait la différence.</li>
         <li>• Changements qui se sentent sans dérégler toute la position : selle ±5 mm, reach ±10 mm, drop ±10-15 mm.</li>
@@ -898,7 +878,7 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
       eyebrow="Réglages du vélo"
       title="Quelles sont les mesures actuelles du vélo ?"
       subtitle={
-        <p className="text-neutral-400 text-sm mb-6">Mesure directement sur le vélo pour cet essai — pas besoin de calculer une différence, l'app compare pour toi.</p>
+        <p className="text-text-dim text-sm mb-6">Mesure directement sur le vélo pour cet essai — pas besoin de calculer une différence, l'app compare pour toi.</p>
       }
       footer={
         <>
@@ -913,12 +893,12 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
               })
             }
             disabled={!requiredFieldsValid}
-            className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
+            className="w-full py-3 rounded-control bg-gold text-ink font-semibold disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan"
           >
             Valider ces réglages
           </button>
           {onCancel && (
-            <button onClick={onCancel} className="w-full text-sm text-neutral-500 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded">
+            <button onClick={onCancel} className="w-full text-sm text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded">
               Annuler
             </button>
           )}
@@ -963,13 +943,13 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
         />
 
         <div>
-          <div className="text-sm text-neutral-200 mb-1.5">Prolongateurs</div>
+          <div className="text-sm text-text mb-1.5">Prolongateurs</div>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setHasAeroBars(true)}
-              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
-                hasAeroBars ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-gold ${
+                hasAeroBars ? 'bg-gold border-gold text-ink font-semibold' : 'border-border text-text-dim'
               }`}
             >
               Oui
@@ -977,14 +957,14 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
             <button
               type="button"
               onClick={() => setHasAeroBars(false)}
-              className={`flex-1 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
-                !hasAeroBars ? 'bg-amber-400 border-amber-400 text-neutral-950 font-medium' : 'border-neutral-700 text-neutral-300'
+              className={`flex-1 py-2 rounded-control border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-gold ${
+                !hasAeroBars ? 'bg-gold border-gold text-ink font-semibold' : 'border-border text-text-dim'
               }`}
             >
               Non
             </button>
           </div>
-          <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
+          <p className="text-xs text-text-faint mt-1 leading-relaxed">
             Le vélo est-il équipé de prolongateurs (guidon aéro/triathlon) pour cet essai ? Ça change beaucoup l'aérodynamisme et la position des mains.
           </p>
         </div>
