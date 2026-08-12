@@ -481,14 +481,14 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
         <>
           <button
             onClick={onNewTrial}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold"
           >
             <Plus className="w-4 h-4" /> Nouvel essai
           </button>
           <button
             onClick={onAnalyze}
             disabled={trials.length === 0}
-            className="w-full py-3 rounded-lg bg-amber-400 text-neutral-950 font-medium disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-200"
+            className="w-full py-3 rounded-control bg-gold text-ink font-semibold disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan"
           >
             Voir les résultats
           </button>
@@ -504,26 +504,24 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
                   : 'Nouvelle session et repartir de zéro ?';
               if (confirm(msg)) onNewSession();
             }}
-            className="w-full text-xs text-neutral-400 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded"
+            className="w-full text-xs text-text-faint underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gold rounded"
           >
             Nouvelle session
           </button>
         </>
       }
     >
-      <p className="text-neutral-400 text-sm mb-3">
+      <p className="text-text-dim text-sm mb-3">
         Souplesse {profile.hipFlexibilityScore}/5 · Objectif {profile.goal === 'comfort' ? 'confort' : 'aéro'}
       </p>
 
       {trials.length === 0 && referenceSaddleHeightCm && (
-        <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 mb-6">
-          <div className="text-xs tracking-widest text-cyan-300 uppercase mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Avant ton premier essai
-          </div>
-          <p className="text-sm text-cyan-100">
+        <div className="rounded-card border border-cyan/20 bg-cyan/5 p-4 mb-6">
+          <div className="text-xs tracking-widest text-cyan uppercase mb-1 font-mono">Avant ton premier essai</div>
+          <p className="text-sm text-cyan">
             Hauteur de selle de référence suggérée : <span className="font-semibold">{referenceSaddleHeightCm} cm</span> (pédalier → haut de selle).
           </p>
-          <p className="text-xs text-cyan-100/70 mt-1">
+          <p className="text-xs text-cyan/70 mt-1">
             Utile si tu ne connais pas déjà ton réglage habituel — sinon, garde le tien comme point de départ.
           </p>
         </div>
@@ -532,52 +530,48 @@ function SessionScreen({ profile, trials, athleteInseamCm, onNewTrial, onAnalyze
       <div className="mb-1">
         <ProgressBar value={trials.length} max={minTrials} />
       </div>
-      <p className="text-xs text-neutral-500 mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
+      <p className="text-xs text-text-faint mb-1 font-mono">
         {trials.length}/{minTrials} essais
       </p>
-      <p className="text-neutral-500 text-xs mb-6">
+      <p className="text-text-faint text-xs mb-6">
         {remaining > 0
           ? `Encore ${remaining} essai${remaining > 1 ? 's' : ''} pour pouvoir comparer tes réglages et voir tes résultats.`
           : 'Tu peux déjà voir tes résultats — ajoute d’autres essais pour affiner la comparaison.'}
       </p>
 
-      <div className="rounded-lg border border-neutral-800 bg-neutral-900 divide-y divide-neutral-800 mb-6">
-        {trials.length === 0 && <p className="text-sm text-neutral-500 p-4">Aucun essai enregistré pour l’instant.</p>}
+      <div className="rounded-card border border-border bg-surface divide-y divide-border mb-6">
+        {trials.length === 0 && <p className="text-sm text-text-faint p-4">Aucun essai enregistré pour l’instant.</p>}
         {trials.map((t) => (
-          <div key={t.id} className="p-4 text-sm" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            <div className="text-neutral-200">{t.id}</div>
+          <div key={t.id} className="p-4 text-sm font-mono">
+            <div className="text-text">{t.id}</div>
             {/* Le genou est un critère d'exclusion dur au même titre que hanche/tronc (validateTrial,
                 cf. posture-aero-engine.ts) mais restait invisible ici — un essai pouvait être exclu
                 pour un genou hors plage sans que rien dans cette liste ne le laisse deviner. */}
-            <div className="text-xs text-neutral-500 mt-1">
+            <div className="text-xs text-text-faint mt-1">
               hanche {t.angles.hip.mean}° · tronc {t.angles.trunk.mean}° · genou {t.angles.knee.mean}° · pFSA {t.frontal.pFSA_cm2} cm²
             </div>
-            {t.deltas && <div className="text-xs text-amber-400/70 mt-1">{formatDeltas(t.deltas)}</div>}
+            {t.deltas && <div className="text-xs text-gold/70 mt-1">{formatDeltas(t.deltas)}</div>}
           </div>
         ))}
       </div>
 
       {lastTrial && (
-        <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-4 mb-6">
-          <div className="text-xs tracking-widest text-amber-300 uppercase mb-1" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            Suggestion pour le prochain essai
-          </div>
+        <div className="rounded-card border border-gold/20 bg-gold/5 p-4 mb-6">
+          <div className="text-xs tracking-widest text-gold uppercase mb-1 font-mono">Suggestion pour le prochain essai</div>
           {nextAdjustment ? (
-            <p className="text-sm text-amber-100">{nextAdjustment.message}</p>
+            <p className="text-sm text-gold">{nextAdjustment.message}</p>
           ) : (
-            <p className="text-sm text-amber-100">
+            <p className="text-sm text-gold">
               Hanche, tronc et genou de {lastTrial.id} sont tous dans leur zone cible — rien à corriger côté angles pour l'instant.
             </p>
           )}
-          <p className="text-xs text-amber-100/60 mt-1.5">
+          <p className="text-xs text-gold/60 mt-1.5">
             Basé sur le paramètre le plus loin de sa zone cible sur ton dernier essai — indicatif, change un seul réglage à la fois et re-teste.
           </p>
         </div>
       )}
 
-      <p className="text-neutral-400 text-xs mb-6">
-        Reprend automatiquement ici si tu quittes ou si le navigateur plante.
-      </p>
+      <p className="text-text-faint text-xs mb-6">Reprend automatiquement ici si tu quittes ou si le navigateur plante.</p>
     </ScreenShell>
   );
 }
