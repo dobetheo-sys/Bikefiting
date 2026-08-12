@@ -254,9 +254,23 @@ export function buildRunTrialMetrics(
 // .footStrikeAngleDeg) : la littérature ne converge pas sur un type d'attaque supérieur aux
 // autres, donc en faire un critère serait inventer une norme. Affiché pour que l'athlète sache
 // ce qu'il fait, pas pour lui dire que c'est bien ou mal.
+//
+// [SOURCED] Bornes d'Altman & Davis 2012 (Gait Posture) — méthode cinématique de classification
+// du type d'attaque : talon > 8°, medio-pied entre -1.6° et 8°, avant-pied < -1.6°.
+// Corrigé après audit (docs/AUDIT_MOTEUR_COURSE.md §2.5) : la V1 utilisait des bornes
+// symétriques à ±5°, inventées. Elles annonçaient "talon" entre 5 et 8° (en réalité medio-pied)
+// et "medio-pied" entre -5 et -1.6° (en réalité avant-pied). Les vraies bornes ne sont pas
+// symétriques — une attaque talon typique se situe à 20.4 ± 4.8° (Breine 2017), la zone
+// medio-pied est donc décalée vers le positif, pas centrée sur zéro.
+//
+// Limite à connaître : l'angle d'attaque dépend fortement de la vitesse (Breine 2014, 2019) —
+// ces bornes sont établies autour de 3.2 m/s et ne sont pas qualifiées par l'allure ici.
+const FOOT_STRIKE_REARFOOT_MIN_DEG = 8;
+const FOOT_STRIKE_FOREFOOT_MAX_DEG = -1.6;
+
 export function describeFootStrike(footStrikeAngleDeg: number): 'talon' | 'medio-pied' | 'avant-pied' | 'indéterminé' {
   if (!Number.isFinite(footStrikeAngleDeg)) return 'indéterminé';
-  if (footStrikeAngleDeg > 5) return 'talon';
-  if (footStrikeAngleDeg < -5) return 'avant-pied';
+  if (footStrikeAngleDeg > FOOT_STRIKE_REARFOOT_MIN_DEG) return 'talon';
+  if (footStrikeAngleDeg < FOOT_STRIKE_FOREFOOT_MAX_DEG) return 'avant-pied';
   return 'medio-pied';
 }

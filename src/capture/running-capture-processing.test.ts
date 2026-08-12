@@ -206,10 +206,14 @@ describe('estimateCadenceFromFrames — cadence auto + garde-fou d\'échantillon
   });
 });
 
-describe('describeFootStrike — repère descriptif, aucune notion de "bon" ou "mauvais"', () => {
-  test('pointe nettement plus haute que le talon -> talon', () => assert.equal(describeFootStrike(12), 'talon'));
-  test('pied à plat -> medio-pied', () => assert.equal(describeFootStrike(2), 'medio-pied'));
-  test('pointe plus basse que le talon -> avant-pied', () => assert.equal(describeFootStrike(-9), 'avant-pied'));
+// Bornes d'Altman & Davis 2012, et non des bornes symétriques inventées : les deux cas 7° et -3°
+// ci-dessous étaient classés à tort par la V1 (cf. docs/AUDIT_MOTEUR_COURSE.md §2.5).
+describe('describeFootStrike — bornes publiées (Altman & Davis 2012), repère descriptif seulement', () => {
+  test('attaque talon typique (20.4°, Breine 2017) -> talon', () => assert.equal(describeFootStrike(20.4), 'talon'));
+  test('juste au-dessus de la borne talon (8.5°) -> talon', () => assert.equal(describeFootStrike(8.5), 'talon'));
+  test('7° -> medio-pied (la V1, à ±5°, annonçait talon)', () => assert.equal(describeFootStrike(7), 'medio-pied'));
+  test('pied à plat (0°) -> medio-pied', () => assert.equal(describeFootStrike(0), 'medio-pied'));
+  test('-3° -> avant-pied (la V1, à ±5°, annonçait medio-pied)', () => assert.equal(describeFootStrike(-3), 'avant-pied'));
   test('mesure NaN -> indéterminé', () => assert.equal(describeFootStrike(NaN), 'indéterminé'));
 });
 

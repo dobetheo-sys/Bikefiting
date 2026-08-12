@@ -111,9 +111,9 @@ Profil athlète requis :
 |---|---|---|
 | Tibia à l'attaque | > 10° vers l'avant | Le principe "tibia proche de la verticale" est standard en réathlétisation ; **le seuil chiffré ne l'est pas** |
 | Ratio d'overstriding | > 0.15 | **Non sourcé** — défaut d'ingénierie |
-| Flexion genou à l'attaque | < 10° | Flexion typique 10-20° à l'attaque ; sous 10°, réception jambe quasi tendue |
+| Flexion genou à l'attaque | < 10° | Flexion typique **15-25°** à l'attaque ; sous 10°, réception jambe quasi tendue |
 | Inclinaison du tronc | hors 5-15° | Convergence de sources ; Teng & Powers 2014 : plus de flexion du tronc réduit la contrainte fémoro-patellaire |
-| Angle de pied | — | **Jamais évalué**, seulement décrit (talon / medio / avant-pied) |
+| Angle de pied | — | **Jamais évalué**, seulement décrit. Bornes de classification : Altman & Davis 2012 (talon > 8°, medio −1,6 à 8°, avant-pied < −1,6°) |
 
 ---
 
@@ -189,6 +189,14 @@ Ce n'est pas codé en dur : c'est ce que le calcul retourne.
 ---
 
 ## 7. Table de confiance des sources
+
+> **Audité le 12/08/2026 — voir `docs/AUDIT_MOTEUR_COURSE.md`.** Plusieurs lignes ci-dessous
+> sont contredites ou nuancées par cet audit, en particulier : le sommet de la courbe d'économie
+> n'est pas à la cadence spontanée (§2.6), la pénalité d'économie devrait être asymétrique
+> (§2.8), l'inclinaison du tronc est mal soutenue comme facteur d'économie (§2.4), et aucun
+> seuil publié n'existe pour le tibia ni l'overstriding (§2.1, §2.2). Les corrections engageant
+> les recommandations du moteur n'ont pas encore été appliquées.
+
 
 | Élément | Statut | Source |
 |---|---|---|

@@ -88,11 +88,21 @@ export interface ScoredRunTrial extends RunTrial {
 
 // Contraintes DURES — validité de mesure uniquement (cf. avertissement en tête de fichier).
 const SPEED_TOLERANCE_KMH = 0.3; // [DEFAULT] sur tapis l'allure est exacte ; tolérance pour l'arrondi de saisie
-const CADENCE_PLAUSIBLE_MIN = 130; // [DEFAULT] garde-fou de mesure, pas un jugement biomécanique
+// [DEFAULT] garde-fou de mesure, pas un jugement biomécanique. Rend un service non prévu à
+// l'origine et repéré à l'audit : c'est le filet qui attrape la confusion appuis/foulées. Un
+// coureur à 170 pas/min qui compte ses FOULÉES saisit 85, tombe sous le plancher, et l'essai est
+// écarté au lieu de fausser silencieusement tout le scoring — qui est entièrement relatif à
+// cette valeur (cf. docs/AUDIT_MOTEUR_COURSE.md §2.11).
+const CADENCE_PLAUSIBLE_MIN = 130;
 const CADENCE_PLAUSIBLE_MAX = 220;
 
 // Seuils d'AVERTISSEMENT — jamais exclusoires.
-const KNEE_FLEX_IC_WARN = 10; // [SOURCED, indicatif] flexion typique 10-20° à l'attaque ; sous 10° = réception jambe quasi tendue
+// [SOURCED, indicatif] Flexion typique au contact : 15-25° (corrigé à l'audit — la V1 annonçait
+// 10-20°). Le seuil à 10° n'avertit donc que ~0.6% des coureurs : c'est un détecteur de valeur
+// aberrante, pas un jugement sur une foulée ordinaire. Nuance non traitée : les attaques
+// avant-pied contactent avec PLUS de flexion que les attaques talon (Almeida/Davis/Lopes 2015),
+// donc ce seuil n'est pas neutre vis-à-vis du type d'attaque.
+const KNEE_FLEX_IC_WARN = 10;
 const TRUNK_LEAN_MIN = 5; // [SOURCED, convergence] inclinaison typique 5-15° ; Teng & Powers 2014 : plus de flexion du tronc réduit la contrainte fémoro-patellaire
 const TRUNK_LEAN_MAX = 15;
 const TIBIA_ANGLE_WARN = 10; // [DEFAULT] le principe "tibia proche de la verticale à l'attaque" est standard en réathlétisation, le seuil chiffré ne l'est pas
