@@ -216,15 +216,40 @@ describe('computeManualAslrAngle — mesure par 3 taps (hanche/genou/cheville), 
 
 describe('mesure manuelle vidéo profil (PMH/PMB) — retour terrain 10/08/2026', () => {
   // Mêmes coordonnées vérifiées à la main que synthCycleFrames() (voir plus haut) : hanche
-  // attendue ≈45.0°, tronc attendu = 12.0° exact.
+  // attendue ≈45.0°, tronc attendu = 12.0° exact — inchangées par l'ajout épaule/coude/poignet
+  // (12/08/2026), qui ne dépend que des nouveaux points ci-dessous.
   const shoulder: Landmark = { x: 0.2, y: 0.4862, visibility: 0.95 };
   const hipPmh: Landmark = { x: 0.5, y: 0.55, visibility: 0.97 };
   const kneePmh: Landmark = { x: 0.3474, y: 0.3151, visibility: 0.9 };
 
+  // Bras construit pour des angles ronds, vérifiés à la main comme le reste du fichier :
+  // épaule->coude horizontal, coude->poignet vertical (perpendiculaire) -> coudeAngle = 90°
+  // exact. Poignet->main dans le prolongement exact de coude->poignet (colinéaire, même sens
+  // que l'avant-bras) -> poignet aligné, aucun fléchissement -> wristBendAngle = 0° exact.
+  const elbow: Landmark = { x: shoulder.x + 0.1, y: shoulder.y, visibility: 0.9 };
+  const wrist: Landmark = { x: elbow.x, y: elbow.y + 0.1, visibility: 0.9 };
+  const hand: Landmark = { x: wrist.x, y: wrist.y + 0.1, visibility: 0.85 };
+
   test('computeManualTrialPmh : hanche ≈45.0° et tronc = 12.0° (mêmes points que synthCycleFrames vérifiés à la main)', () => {
-    const m = computeManualTrialPmh(shoulder, hipPmh, kneePmh);
+    const m = computeManualTrialPmh(hand, wrist, elbow, shoulder, hipPmh, kneePmh);
     assert.ok(Math.abs(m.hipAngle - 45) < 1.5, `hipAngle=${m.hipAngle}, attendu ≈45.0°`);
     assert.equal(m.trunkAngle, 12);
+  });
+
+  test('computeManualTrialPmh : coude = 90° (segments perpendiculaires par construction)', () => {
+    const m = computeManualTrialPmh(hand, wrist, elbow, shoulder, hipPmh, kneePmh);
+    assert.equal(m.elbowAngle, 90);
+  });
+
+  test('computeManualTrialPmh : poignet aligné (main dans le prolongement de l\'avant-bras) -> wristBendAngle = 0°', () => {
+    const m = computeManualTrialPmh(hand, wrist, elbow, shoulder, hipPmh, kneePmh);
+    assert.equal(m.wristBendAngle, 0);
+  });
+
+  test('computeManualTrialPmh : poignet fléchi (main décalée hors du prolongement) -> wristBendAngle > 0°', () => {
+    const bentHand: Landmark = { x: wrist.x + 0.1, y: wrist.y + 0.02, visibility: 0.85 };
+    const m = computeManualTrialPmh(bentHand, wrist, elbow, shoulder, hipPmh, kneePmh);
+    assert.ok(m.wristBendAngle > 0, `wristBendAngle=${m.wristBendAngle}, attendu > 0° (poignet cassé)`);
   });
 
   // Mêmes points alignés que le test ASLR ci-dessus (genou verrouillé -> 180° exact).
@@ -238,7 +263,7 @@ describe('mesure manuelle vidéo profil (PMH/PMB) — retour terrain 10/08/2026'
   });
 
   test('buildManualTrialAngles : combine PMH + PMB en TrialAngles (mean=min=max, amplitude/variance=0)', () => {
-    const pmh = computeManualTrialPmh(shoulder, hipPmh, kneePmh);
+    const pmh = computeManualTrialPmh(hand, wrist, elbow, shoulder, hipPmh, kneePmh);
     const pmb = computeManualTrialPmb(hipPmb, kneePmb, anklePmb);
     const angles = buildManualTrialAngles(pmh, pmb);
 
@@ -251,6 +276,12 @@ describe('mesure manuelle vidéo profil (PMH/PMB) — retour terrain 10/08/2026'
     assert.equal(angles.knee.mean, pmb.kneeAngle);
     assert.equal(angles.knee.min, pmb.kneeAngle);
     assert.equal(angles.knee.max, pmb.kneeAngle);
+
+    assert.equal(angles.shoulder.mean, pmh.shoulderAngle);
+    assert.equal(angles.elbow.mean, pmh.elbowAngle);
+    assert.equal(angles.elbow.amplitude, 0);
+    assert.equal(angles.wrist.mean, pmh.wristBendAngle);
+    assert.equal(angles.wrist.amplitude, 0);
 
     assert.equal(angles.ankle.amplitude, 0); // jamais de warning qualité en mesure manuelle
     assert.equal(angles.wrist.mean, 0);

@@ -21,7 +21,18 @@ export interface TrialAngles {
   trunk: AngleStats; // torse / horizontale, degrés
   knee: AngleStats;  // angle interne hanche-genou-cheville, au PMB
   ankle: AngleStats; // amplitude cheville sur le cycle
-  wrist: AngleStats; // déviation ulnaire, degrés
+  // fléchissement sagittal du poignet (0° = aligné dans le prolongement de l'avant-bras,
+  // "poignet cassé" au-delà), mesuré au PMH — PAS la déviation ulnaire clinique (rotation
+  // hors du plan sagittal, invisible de profil) : cf. capture-processing.ts en tête de
+  // fichier pour la distinction. Alimente WRIST_WARN et le score confort (weights.hands)
+  // ci-dessous, seul des 3 nouveaux angles bras à avoir un effet sur le scoring.
+  wrist: AngleStats;
+  // épaule (hanche-épaule-coude) et coude (épaule-coude-poignet), mesurés au PMH — affichage
+  // seulement pour l'instant : aucun seuil sourcé pour une plage confortable en position aéro,
+  // donc pas de warning/pénalité tant qu'une vraie source n'est identifiée (même logique que
+  // le reste du moteur : pas de fausse précision, cf. [DEFAULT] vs [SOURCED] plus haut).
+  shoulder: AngleStats;
+  elbow: AngleStats;
 }
 
 export interface AthleteProfile {
@@ -196,7 +207,7 @@ export function validateTrial(angles: TrialAngles, profile: AthleteProfile): Val
 
   // Poignet : warning seulement (non sourcé, cf. §10 du spec)
   if (angles.wrist.mean > WRIST_WARN) {
-    warnings.push({ param: 'wrist_deviation', value: angles.wrist.mean, bound: WRIST_WARN });
+    warnings.push({ param: 'wrist_bend', value: angles.wrist.mean, bound: WRIST_WARN });
   }
 
   return { valid: violations.length === 0, violations, warnings, margins };

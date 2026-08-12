@@ -23,6 +23,8 @@ function mkTrial(id: string, hip: number, trunk: number, pfsa: number, headOff: 
       knee: { mean: 143, min: 139, max: 148, amplitude: 9, variance: 0.5 },
       ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
       wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+      shoulder: { mean: 60, min: 60, max: 60, amplitude: 0, variance: 0 },
+      elbow: { mean: 150, min: 150, max: 150, amplitude: 0, variance: 0 },
     },
     frontal: { pFSA_cm2: pfsa, athleteHeight_cm: 178, headOffset_cm: headOff },
     deltas,
@@ -74,6 +76,8 @@ describe('suggestNextAdjustment — écart le plus grand -> réglage vélo à to
         knee: { mean: 133, min: 130, max: 145, amplitude: 15, variance: 0.5 }, // min 130 < KNEE_MIN 137
         ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
         wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+        shoulder: { mean: 60, min: 60, max: 60, amplitude: 0, variance: 0 },
+        elbow: { mean: 150, min: 150, max: 150, amplitude: 0, variance: 0 },
       },
       frontal: { pFSA_cm2: 700, athleteHeight_cm: 178, headOffset_cm: 2 },
       deltas: { saddleHeightMm: 700, reachMm: 515, dropMm: 95 },
@@ -127,6 +131,8 @@ describe('validateTrial — knee_range affiche la valeur/le seuil réellement fr
       knee: { mean: 143, min: 130, max: 148, amplitude: 18, variance: 0.5 }, // moyenne 143 est dans [137,150], seul min=130 est hors plage
       ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
       wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+      shoulder: { mean: 60, min: 60, max: 60, amplitude: 0, variance: 0 },
+      elbow: { mean: 150, min: 150, max: 150, amplitude: 0, variance: 0 },
     };
     const v = validateTrial(angles, profile);
     assert.equal(v.violations[0]?.value, 130); // pas 143 (la moyenne, qui est dans la plage)
@@ -140,10 +146,50 @@ describe('validateTrial — knee_range affiche la valeur/le seuil réellement fr
       knee: { mean: 143, min: 139, max: 155, amplitude: 16, variance: 0.5 }, // moyenne 143 est dans [137,150], seul max=155 est hors plage
       ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
       wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+      shoulder: { mean: 60, min: 60, max: 60, amplitude: 0, variance: 0 },
+      elbow: { mean: 150, min: 150, max: 150, amplitude: 0, variance: 0 },
     };
     const v = validateTrial(angles, profile);
     assert.equal(v.violations[0]?.value, 155);
     assert.equal(v.violations[0]?.bound, 150);
+  });
+});
+
+// wrist.mean était câblé à 0 en permanence avant la mesure manuelle épaule/coude/poignet
+// (12/08/2026) — ce chemin n'avait donc jamais été exercé avec une vraie valeur au-dessus du
+// seuil. On vérifie ici qu'il se déclenche correctement maintenant qu'il est atteignable.
+describe('validateTrial — wrist_bend (poignet cassé), atteignable pour la première fois', () => {
+  const profile: AthleteProfile = { hipFlexibilityScore: 3 };
+
+  test('poignet fléchi au-delà de WRIST_WARN (15°) -> avertissement, pas exclusoire', () => {
+    const angles = {
+      hip: { mean: 46, min: 43, max: 49, amplitude: 6, variance: 1 },
+      trunk: { mean: 10, min: 8, max: 12, amplitude: 4, variance: 0.5 },
+      knee: { mean: 143, min: 139, max: 148, amplitude: 9, variance: 0.5 },
+      ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
+      wrist: { mean: 22, min: 22, max: 22, amplitude: 0, variance: 0 },
+      shoulder: { mean: 60, min: 60, max: 60, amplitude: 0, variance: 0 },
+      elbow: { mean: 150, min: 150, max: 150, amplitude: 0, variance: 0 },
+    };
+    const v = validateTrial(angles, profile);
+    assert.equal(v.valid, true); // avertissement seulement, cf. WRIST_WARN [DEFAULT] non exclusoire
+    assert.equal(v.warnings[0]?.param, 'wrist_bend');
+    assert.equal(v.warnings[0]?.value, 22);
+    assert.equal(v.warnings[0]?.bound, 15);
+  });
+
+  test('poignet sous le seuil -> aucun avertissement', () => {
+    const angles = {
+      hip: { mean: 46, min: 43, max: 49, amplitude: 6, variance: 1 },
+      trunk: { mean: 10, min: 8, max: 12, amplitude: 4, variance: 0.5 },
+      knee: { mean: 143, min: 139, max: 148, amplitude: 9, variance: 0.5 },
+      ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
+      wrist: { mean: 5, min: 5, max: 5, amplitude: 0, variance: 0 },
+      shoulder: { mean: 60, min: 60, max: 60, amplitude: 0, variance: 0 },
+      elbow: { mean: 150, min: 150, max: 150, amplitude: 0, variance: 0 },
+    };
+    const v = validateTrial(angles, profile);
+    assert.equal(v.warnings.some((w) => w.param === 'wrist_bend'), false);
   });
 });
 
@@ -157,6 +203,8 @@ describe('validateTrial — garde-fou NaN (2 points tapés confondus)', () => {
       knee: { mean: 143, min: 139, max: 148, amplitude: 9, variance: 0.5 },
       ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
       wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+      shoulder: { mean: 60, min: 60, max: 60, amplitude: 0, variance: 0 },
+      elbow: { mean: 150, min: 150, max: 150, amplitude: 0, variance: 0 },
     };
     const v = validateTrial(angles, profile);
     assert.equal(v.valid, false);
@@ -170,6 +218,8 @@ describe('validateTrial — garde-fou NaN (2 points tapés confondus)', () => {
       knee: { mean: NaN, min: NaN, max: NaN, amplitude: 0, variance: 0 },
       ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
       wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+      shoulder: { mean: 60, min: 60, max: 60, amplitude: 0, variance: 0 },
+      elbow: { mean: 150, min: 150, max: 150, amplitude: 0, variance: 0 },
     };
     const v = validateTrial(angles, profile);
     assert.equal(v.valid, false);
@@ -205,6 +255,8 @@ describe("AthleteProfile.goal — 'comfort' assouplit tronc/genou sans toucher �
       knee: { mean: 133, min: 130, max: 145, amplitude: 15, variance: 0.5 }, // min 130 < KNEE_MIN 137
       ankle: { mean: 0, min: -10, max: 10, amplitude: 18, variance: 0.3 },
       wrist: { mean: 8, min: 5, max: 11, amplitude: 6, variance: 0.2 },
+      shoulder: { mean: 60, min: 60, max: 60, amplitude: 0, variance: 0 },
+      elbow: { mean: 150, min: 150, max: 150, amplitude: 0, variance: 0 },
     };
     const vAero = validateTrial(angles, aero);
     assert.equal(vAero.valid, false);

@@ -95,6 +95,9 @@ const IMPORT_FIRST_MODES = new Set(['profile_video', 'aslr_test', 'frontal_photo
 // entre aslr_test/pmh/pmb qui réutilisent les mêmes noms ('hanche', 'genou', 'cheville').
 const JOINT_POINT_HINTS = {
   épaule: "Acromion : la pointe osseuse en haut de l'épaule, à l'extrémité de la clavicule — pas le haut du bras.",
+  coude: "Épicondyle latéral de l'humérus : la bosse osseuse sur le côté extérieur du coude, à hauteur de l'articulation.",
+  poignet: 'Apophyse styloïde du radius : la bosse osseuse sur le côté du poignet, côté pouce.',
+  main: '2ᵉ métacarpien : la jointure à la base de l\'index, sur le dessus de la main.',
   hanche: 'Grand trochanter : la bosse osseuse sur le côté de la hanche, sous la ceinture — pas le pli du short.',
   genou: "Épicondyle latéral du fémur : la bosse osseuse sur le côté extérieur du genou, à hauteur de l'articulation.",
   cheville: 'Malléole latérale : la bosse osseuse sur le côté extérieur de la cheville.',
@@ -125,9 +128,13 @@ const MANUAL_MEASURE_STEPS = {
       key: 'pmh',
       frameInstruction: "Trouve l'image où la pédale du côté filmé est tout en haut (point mort haut) : cuisse la plus proche du buste.",
       pickButtonLabel: 'Choisir cette image (point haut)',
-      pointLabels: ['épaule', 'hanche', 'genou'],
-      pointHints: withJointHints(['épaule', 'hanche', 'genou']),
-      compute: (pts) => computeManualTrialPmh(pts[0], pts[1], pts[2]),
+      // Ordre = chaîne anatomique continue main -> poignet -> coude -> épaule -> hanche ->
+      // genou (le bras ne rebouge pas significativement entre PMH et PMB, donc mesuré une
+      // seule fois ici plutôt que redemandé au PMB) — TrialReviewScreen relie les points
+      // consécutifs pour l'overlay de relecture, sans table de correspondance séparée.
+      pointLabels: ['main', 'poignet', 'coude', 'épaule', 'hanche', 'genou'],
+      pointHints: withJointHints(['main', 'poignet', 'coude', 'épaule', 'hanche', 'genou']),
+      compute: (pts) => computeManualTrialPmh(pts[0], pts[1], pts[2], pts[3], pts[4], pts[5]),
     },
     {
       key: 'pmb',
@@ -669,8 +676,27 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   // aussi au démontage), l'ANCIENNE valeur est révoquée — couvre uniformément retake/startOver/
   // capturePhoto/importPhoto/importVideo/startRecording/captureMeasureFrame sans dupliquer la
   // logique de révocation à chaque site.
+  //
+  // Bug trouvé en vérifiant l'overlay de relecture (12/08/2026) : ce nettoyage générique ne
+  // savait pas que finishMeasureStep() TRANSFÈRE measureStillUrl vers measureReviews (pour la
+  // relecture dans TrialReviewScreen côté App.jsx) au lieu de l'abandonner — il révoquait donc
+  // aussitôt l'image de chaque étape validée (au passage PMH -> PMB, puis au démontage du
+  // composant après la dernière étape), rendant TrialReviewScreen invariablement cassé
+  // (confirmé : fetch() sur le blob URL affiché échoue avec "Failed to fetch", signature d'une
+  // URL déjà révoquée). savedStillUrlsRef, alimenté de façon synchrone dans finishMeasureStep
+  // (une simple mutation de ref, pas un state — donc déjà à jour au moment où ce cleanup
+  // s'exécute, sans dépendre de l'ordre de traitement des effets React), fait exception pour
+  // les URLs ainsi transférées. retake()/startOver() (qui abandonnent vraiment measureReviews,
+  // eux) révoquent explicitement ces URLs "sauvées" ci-dessous, sans quoi elles ne seraient
+  // plus jamais nettoyées par ce cleanup générique.
+  const savedStillUrlsRef = useRef(new Set());
   useEffect(() => () => { if (capturedUrl) URL.revokeObjectURL(capturedUrl); }, [capturedUrl]);
-  useEffect(() => () => { if (measureStillUrl) URL.revokeObjectURL(measureStillUrl); }, [measureStillUrl]);
+  useEffect(
+    () => () => {
+      if (measureStillUrl && !savedStillUrlsRef.current.has(measureStillUrl)) URL.revokeObjectURL(measureStillUrl);
+    },
+    [measureStillUrl]
+  );
 
   useEffect(() => {
     try {
@@ -858,7 +884,11 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
 
   const retake = () => {
     // Reprendre la capture entière invalide toute progression de mesure déjà faite (les
-    // images choisies venaient de l'ancienne vidéo) — repart de l'étape 0.
+    // images choisies venaient de l'ancienne vidéo) — repart de l'étape 0. measureReviews est
+    // vraiment abandonné ici (contrairement à finishMeasureStep) : les URLs déjà "sauvées" par
+    // savedStillUrlsRef doivent être révoquées explicitement, sinon plus personne ne le fera.
+    measureReviews.forEach((r) => { if (r.stillUrl) URL.revokeObjectURL(r.stillUrl); });
+    savedStillUrlsRef.current.clear();
     setCapturedUrl(null);
     setCapturedMeta(null);
     setTaps([]);
@@ -950,11 +980,19 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const handleCancelMeasure = () => {
     const hasProgress = measureResults.length > 0 || measurePoints.length > 0;
     if (hasProgress && !confirm('Abandonner cette mesure ? Les étapes déjà validées pour cet essai seront perdues.')) return;
+    // cf. retake()/startOver() : measureReviews est abandonné ici aussi (l'essai n'est jamais
+    // transmis à onCaptured), donc les URLs déjà "sauvées" par savedStillUrlsRef doivent être
+    // révoquées explicitement avant de démonter le composant.
+    measureReviews.forEach((r) => { if (r.stillUrl) URL.revokeObjectURL(r.stillUrl); });
+    savedStillUrlsRef.current.clear();
     onCancel?.();
   };
 
   const finishMeasureStep = () => {
     if (!measureResult) return;
+    // cf. commentaire sur savedStillUrlsRef plus haut : cette étape passe la propriété de
+    // measureStillUrl à measureReviews, le cleanup générique ne doit plus la révoquer.
+    if (measureStillUrl) savedStillUrlsRef.current.add(measureStillUrl);
     const allResults = [...measureResults, measureResult];
     const allReviews = [
       ...measureReviews,
@@ -984,6 +1022,9 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   };
 
   const startOver = () => {
+    // cf. retake() : mêmes raisons de révoquer explicitement measureReviews ici.
+    measureReviews.forEach((r) => { if (r.stillUrl) URL.revokeObjectURL(r.stillUrl); });
+    savedStillUrlsRef.current.clear();
     setCapturedUrl(null);
     setCapturedMeta(null);
     setTaps([]);
@@ -1341,7 +1382,7 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                 dernier point posé, agrandit le pied de page, et fait sauter visuellement l'image
                 (et tous les points déjà posés) juste au-dessus. Même famille de bug que le hint
                 d'en-tête plus haut. */}
-            <div className="rounded-card border border-border bg-surface p-3 space-y-1 min-h-[4.5rem]">
+            <div className="rounded-card border border-border bg-surface p-3 space-y-1 min-h-[7.5rem]">
               {measureResultInvalid && (
                 <p className="text-xs text-danger leading-relaxed">
                   Deux points tapés sont au même endroit (ou presque) — le calcul d'angle n'est pas possible. Glisse-les pour les écarter, ou recommence.
@@ -1368,6 +1409,16 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
                     </div>
                     <div className="text-sm font-mono text-text-dim">
                       Tronc {measureResult.trunkAngle}°
+                    </div>
+                    {/* Épaule/coude/poignet : retour terrain (12/08/2026), un bike-fitter pro
+                        annote aussi ces 3 angles sur ses photos avant/après — pertinents pour
+                        une position aéro (bras sur prolongateurs/cocottes). Lecture secondaire,
+                        pas un hero number : seul le poignet a un effet sur le score (WRIST_WARN
+                        côté moteur), épaule/coude restent informatifs faute de seuil sourcé. */}
+                    <div className="flex gap-3 text-xs font-mono text-text-faint pt-1">
+                      <span>Épaule {measureResult.shoulderAngle}°</span>
+                      <span>Coude {measureResult.elbowAngle}°</span>
+                      <span>Poignet {measureResult.wristBendAngle}°</span>
                     </div>
                   </>
                 )}

@@ -696,6 +696,99 @@ function ReviewMarker({ point, size, label }) {
   );
 }
 
+// Retour terrain (12/08/2026) : un bike-fitter pro annote ses photos avant/après d'une bande
+// colorée qui suit le membre + la valeur d'angle affichée au sommet, plutôt que des points
+// isolés — plus lisible d'un coup d'œil que ReviewMarker seul (qui reste utilisé ci-dessous
+// pour les points qui ne portent pas d'angle calculé, ex. main/cheville, juste comme repère).
+// Chaîne + couleur de domaine par étape : cyan = bras/aéro (main->poignet->coude->épaule),
+// orange = torse/jambe/confort (épaule->hanche->genou, ou hanche->genou->cheville) — même
+// convention que BikeDeltasDiagram/PROFILE_SERIES. `index` fait référence à la position dans
+// pointLabels de l'étape correspondante (MANUAL_MEASURE_STEPS, PostureCaptureFlow.jsx) ;
+// `valueKey` à la clé du résultat calculé (ManualTrialPmhMeasurement / Pmb / Aslr) portée par
+// ce sommet.
+const REVIEW_CHAINS = {
+  pmh: {
+    segments: [
+      { from: 0, to: 1, color: 'var(--color-cyan)' }, // main -> poignet
+      { from: 1, to: 2, color: 'var(--color-cyan)' }, // poignet -> coude
+      { from: 2, to: 3, color: 'var(--color-cyan)' }, // coude -> épaule
+      { from: 3, to: 4, color: 'var(--color-orange)' }, // épaule -> hanche
+      { from: 4, to: 5, color: 'var(--color-orange)' }, // hanche -> genou
+    ],
+    vertices: [
+      { index: 2, color: 'var(--color-cyan)', valueKey: 'elbowAngle' },
+      { index: 1, color: 'var(--color-cyan)', valueKey: 'wristBendAngle' },
+      { index: 3, color: 'var(--color-orange)', valueKey: 'shoulderAngle' },
+      { index: 4, color: 'var(--color-orange)', valueKey: 'hipAngle' },
+    ],
+  },
+  pmb: {
+    segments: [
+      { from: 0, to: 1, color: 'var(--color-orange)' },
+      { from: 1, to: 2, color: 'var(--color-orange)' },
+    ],
+    vertices: [{ index: 1, color: 'var(--color-orange)', valueKey: 'kneeAngle' }],
+  },
+  raise: {
+    segments: [
+      { from: 0, to: 1, color: 'var(--color-orange)' },
+      { from: 1, to: 2, color: 'var(--color-orange)' },
+    ],
+    vertices: [{ index: 1, color: 'var(--color-orange)', valueKey: 'kneeAngle' }],
+  },
+};
+
+function MeasurementOverlay({ points, pointLabels, size, stepKey, result }) {
+  const chain = REVIEW_CHAINS[stepKey];
+  if (!size || !chain) return null;
+  const vertexIndices = new Set(chain.vertices.map((v) => v.index));
+  const pct = (p) => ({ x: (p.x / size.width) * 100, y: (p.y / size.height) * 100 });
+
+  return (
+    <>
+      {/* viewBox 0-100 en unités = pourcentage de l'image, comme left/top ci-dessous — un
+          cercle y reste visuellement cohérent avec le reste de l'overlay même si l'image
+          rendue n'est pas carrée (léger étirement non uniforme, sans conséquence pour un halo
+          décoratif, pas une mesure). */}
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+        {chain.segments.map((s, i) => {
+          const a = points[s.from];
+          const b = points[s.to];
+          if (!a || !b) return null;
+          const pa = pct(a);
+          const pb = pct(b);
+          return <line key={i} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke={s.color} strokeOpacity="0.45" strokeWidth="1.6" strokeLinecap="round" />;
+        })}
+        {chain.vertices.map((v, i) => {
+          const p = points[v.index];
+          if (!p) return null;
+          const pp = pct(p);
+          return <circle key={i} cx={pp.x} cy={pp.y} r="3.4" fill={v.color} fillOpacity="0.3" stroke={v.color} strokeWidth="0.6" />;
+        })}
+      </svg>
+
+      {points.map((p, j) => (vertexIndices.has(j) ? null : <ReviewMarker key={j} point={p} size={size} label={pointLabels[j]} />))}
+
+      {chain.vertices.map((v, i) => {
+        const p = points[v.index];
+        const value = result?.[v.valueKey];
+        if (!p || value == null || Number.isNaN(value)) return null;
+        const left = `${(p.x / size.width) * 100}%`;
+        const top = `${(p.y / size.height) * 100}%`;
+        return (
+          <span
+            key={i}
+            className="absolute px-1.5 py-0.5 rounded-full font-mono text-[10px] font-semibold whitespace-nowrap pointer-events-none"
+            style={{ left, top, transform: 'translate(-50%, -160%)', background: v.color, color: 'var(--color-ink)' }}
+          >
+            {pointLabels[v.index]} {value}°
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 // Relecture d'une étape déjà validée (image + points tapés + résultat), sans avoir à tout
 // refaire — retour terrain : "j'ai pas pu revérifier les mesures que j'avais faites une fois
 // validé". Ne couvre que l'essai en cours (pendingTrial n'est pas persisté, cf. commentaire
@@ -725,12 +818,11 @@ function TrialReviewScreen({ step, pendingTrial, onClose, onRedo }) {
             <div key={i} className="rounded-card border border-border bg-surface overflow-hidden">
               <div className="relative bg-black">
                 <img src={r.stillUrl} alt={`Image mesurée — ${r.key}`} className="w-full h-auto block" />
-                {r.points.map((p, j) => (
-                  <ReviewMarker key={j} point={p} size={r.stillSize} label={r.pointLabels[j]} />
-                ))}
+                <MeasurementOverlay points={r.points} pointLabels={r.pointLabels} size={r.stillSize} stepKey={r.key} result={r.result} />
               </div>
               <div className="p-3 text-sm text-text-dim font-mono">
-                {r.key === 'pmh' && `Hanche ${r.result.hipAngle}° · Tronc ${r.result.trunkAngle}°`}
+                {r.key === 'pmh' &&
+                  `Hanche ${r.result.hipAngle}° · Tronc ${r.result.trunkAngle}° · Épaule ${r.result.shoulderAngle}° · Coude ${r.result.elbowAngle}° · Poignet ${r.result.wristBendAngle}°`}
                 {r.key === 'pmb' && `Genou ${r.result.kneeAngle}°`}
                 {r.key === 'raise' && `Angle ${r.result.angle}° · Genou ${r.result.kneeAngle}°`}
               </div>
@@ -1042,6 +1134,8 @@ function formatViolation(v) {
       return v.value < v.bound
         ? `genou trop plié à un moment du cycle de pédalage (${v.value}° < ${v.bound}° mini)`
         : `genou trop tendu à un moment du cycle de pédalage (${v.value}° > ${v.bound}° maxi)`;
+    case 'wrist_bend':
+      return `poignet cassé (${v.value}° > ${v.bound}° maxi)`;
     case 'invalid_measurement':
       return 'mesure invalide (deux points tapés au même endroit) — refais cette étape';
     default:
