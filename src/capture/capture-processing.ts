@@ -4,12 +4,16 @@
 //
 // LIMITE CONNUE ET IMPORTANTE (à ne pas survoler) :
 // MediaPipe Pose (33 points, BlazePose) ne fournit qu'UN point poignet (WRIST),
-// pas les landmarks de doigts/main. La déviation ulnaire réelle (rotation du
-// poignet dans le plan de la main) ne peut donc PAS être calculée depuis Pose seul.
-// Il faudrait un second modèle (MediaPipe Hands) pointé sur la zone poignet/cocotte,
-// ce qui n'est pas câblé ici. Cohérent avec le fait que ce paramètre est déjà
-// [DEFAULT / non sourcé] côté moteur (§10 du spec) — on ne fait pas semblant de le
-// mesurer précisément tant que ce second modèle n'est pas intégré.
+// pas les landmarks de doigts/main — la déviation ulnaire réelle (rotation du poignet
+// dans le plan de la main, hors du plan sagittal filmé de profil) ne peut donc PAS être
+// calculée depuis Pose seul, ni depuis une vue de profil en général. Cette limite ne
+// s'applique qu'au pipeline auto ci-dessous (extractTrialAngles, abandonné — voir plus
+// bas) : en mesure MANUELLE (computeManualTrialPmh), l'utilisateur tape lui-même un point
+// sur la main, ce qui permet de mesurer le seul angle réellement visible de profil — le
+// fléchissement sagittal du poignet (dorsiflexion/extension, "poignet cassé" vs aligné
+// dans le prolongement de l'avant-bras) — PAS la déviation ulnaire au sens clinique
+// (rotation dans le plan de la main). Voir ManualTrialPmhMeasurement.wristBendAngle
+// ci-dessous pour la formule exacte et cette distinction.
 
 import type { AngleStats, TrialAngles } from '../engine/posture-aero-engine';
 
@@ -110,13 +114,17 @@ export function extractTrialAngles(frames: PoseFrame[]): TrialAngles {
     ankle.push(angleAt(lm[S.KNEE], lm[S.ANKLE], lm[S.FOOT]));
   }
 
+  const zero: AngleStats = { mean: 0, min: 0, max: 0, amplitude: 0, variance: 0 };
   return {
     hip: stats(hip),
     trunk: stats(trunk),
     knee: stats(knee),
     ankle: stats(ankle),
-    // Stub explicite tant que MediaPipe Hands n'est pas intégré — voir avertissement en tête de fichier.
-    wrist: { mean: 0, min: 0, max: 0, amplitude: 0, variance: 0 },
+    // Stubs explicites — ce pipeline auto est abandonné (cf. mesure manuelle plus bas) et
+    // n'a jamais mesuré épaule/coude/poignet.
+    shoulder: zero,
+    elbow: zero,
+    wrist: zero,
   };
 }
 
@@ -260,15 +268,41 @@ export function computeManualAslrAngle(hip: Landmark, knee: Landmark, ankle: Lan
 // volontairement pas demandé ici (buildManualTrialAngles renvoie une amplitude de 0, qui ne
 // déclenche jamais ce warning plutôt que d'inventer une fausse précision).
 
+// Retour terrain (12/08/2026) : un bike-fitter pro annote ses photos avant/après avec les
+// angles épaule/coude/poignet en plus de hanche/genou — pertinent pour une position aéro,
+// où l'angle du bras (prolongateurs/cocottes) compte autant que la jambe. Ajoutés au même
+// point mort haut que hanche/tronc (le bras ne bouge pas significativement entre PMH et PMB,
+// les mains restant sur le cintre tout le pédalage) plutôt que de redemander les mêmes points
+// au PMB. Chaîne de points tapée dans l'ordre anatomique continu main -> poignet -> coude ->
+// épaule -> hanche -> genou (cf. MANUAL_MEASURE_STEPS dans PostureCaptureFlow.jsx), pour que
+// l'overlay de relecture (TrialReviewScreen) puisse relier les points consécutifs sans table
+// de correspondance séparée.
 export interface ManualTrialPmhMeasurement {
   hipAngle: number; // angleAt(épaule, hanche, genou) au point mort haut
   trunkAngle: number; // tronc vs horizontale, au point mort haut
+  shoulderAngle: number; // angleAt(hanche, épaule, coude)
+  elbowAngle: number; // angleAt(épaule, coude, poignet)
+  // 0° = poignet aligné dans le prolongement de l'avant-bras (pas de fléchissement visible de
+  // profil), la valeur augmente avec le fléchissement (dorsiflexion ou extension, non distingué
+  // depuis une seule vue). PAS la déviation ulnaire clinique — cf. avertissement en tête de
+  // fichier. Alimente TrialAngles.wrist (WRIST_WARN côté moteur), jusqu'ici toujours à 0.
+  wristBendAngle: number;
 }
 
-export function computeManualTrialPmh(shoulder: Landmark, hip: Landmark, knee: Landmark): ManualTrialPmhMeasurement {
+export function computeManualTrialPmh(
+  hand: Landmark,
+  wrist: Landmark,
+  elbow: Landmark,
+  shoulder: Landmark,
+  hip: Landmark,
+  knee: Landmark
+): ManualTrialPmhMeasurement {
   return {
     hipAngle: r1(angleAt(shoulder, hip, knee)),
     trunkAngle: r1(angleVsHorizontal(hip, shoulder)),
+    shoulderAngle: r1(angleAt(hip, shoulder, elbow)),
+    elbowAngle: r1(angleAt(shoulder, elbow, wrist)),
+    wristBendAngle: r1(180 - angleAt(elbow, wrist, hand)),
   };
 }
 
@@ -295,7 +329,9 @@ export function buildManualTrialAngles(pmh: ManualTrialPmhMeasurement, pmb: Manu
     trunk: fixedStat(pmh.trunkAngle),
     knee: fixedStat(pmb.kneeAngle),
     ankle: zero, // non mesuré manuellement (warning qualité non-bloquant, cf. commentaire ci-dessus)
-    wrist: zero, // stub existant, cf. limite MediaPipe Hands documentée en tête de fichier
+    shoulder: fixedStat(pmh.shoulderAngle),
+    elbow: fixedStat(pmh.elbowAngle),
+    wrist: fixedStat(pmh.wristBendAngle), // désormais mesuré pour de vrai (avant : stub à 0)
   };
 }
 
