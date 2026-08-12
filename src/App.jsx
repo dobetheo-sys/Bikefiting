@@ -131,14 +131,7 @@ async function processFrontalPhoto(blob, calibration) {
 }
 
 function Shell({ children }) {
-  return (
-    <div
-      className="w-full h-full min-h-screen bg-neutral-950 text-neutral-100 flex flex-col"
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
-    >
-      {children}
-    </div>
-  );
+  return <div className="w-full h-full min-h-screen bg-bg text-text font-sans flex flex-col">{children}</div>;
 }
 
 function Busy({ label, progress }) {
@@ -146,12 +139,12 @@ function Busy({ label, progress }) {
   return (
     <Shell>
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center max-w-xs mx-auto w-full">
-        <Loader2 className="w-6 h-6 text-amber-400 animate-spin mb-4" />
-        <p className="text-sm text-neutral-300 mb-4">{label}</p>
+        <Loader2 className="w-6 h-6 text-gold animate-spin mb-4" />
+        <p className="text-sm text-text-dim mb-4">{label}</p>
         {pct !== null && (
           <>
             <ProgressBar value={progress.current} max={progress.total} />
-            <p className="text-xs text-neutral-500 mt-2" style={{ fontFamily: 'ui-monospace, monospace' }}>
+            <p className="text-xs text-text-faint font-mono mt-2">
               {progress.current}/{progress.total} images analysées · {pct}%
             </p>
           </>
@@ -165,12 +158,12 @@ function ErrorScreen({ message, onRetry }) {
   return (
     <Shell>
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center max-w-md mx-auto w-full">
-        <AlertTriangle className="w-8 h-8 text-amber-400 mb-3" />
-        <p className="text-neutral-200 text-sm">{message}</p>
-        <p className="text-xs text-neutral-500 mt-2">Pas de souci, ce que tu as déjà rempli est conservé.</p>
+        <AlertTriangle className="w-8 h-8 text-gold mb-3" />
+        <p className="text-text text-sm">{message}</p>
+        <p className="text-xs text-text-faint mt-2">Pas de souci, ce que tu as déjà rempli est conservé.</p>
         <button
           onClick={onRetry}
-          className="mt-6 flex items-center gap-2 py-3 px-5 rounded-lg border border-neutral-700 text-neutral-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          className="mt-6 flex items-center gap-2 py-3 px-5 rounded-control border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold"
         >
           <RotateCcw className="w-4 h-4" /> Réessayer
         </button>
@@ -182,8 +175,8 @@ function ErrorScreen({ message, onRetry }) {
 function ProgressBar({ value, max }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (
-    <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden">
-      <div className="h-full bg-amber-400 transition-[width] duration-300" style={{ width: `${pct}%` }} />
+    <div className="w-full h-1.5 rounded-full bg-surface-3 overflow-hidden">
+      <div className="h-full bg-gold transition-[width] duration-300" style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -194,26 +187,24 @@ function ProgressBar({ value, max }) {
 // bas) plutôt que Shell/min-h-screen + centrage vertical, pour que le bouton principal
 // reste toujours atteignable sans avoir à scroller d'abord (retour d'audit ergonomique :
 // "CTA ancré en bas partout").
-function ScreenShell({ eyebrow, eyebrowColor = 'text-amber-400', title, subtitle, children, footer }) {
+//
+// Restyle Zenna : le h1 générique reste en Inter (font-sans), pas en Bebas Neue — ce slot
+// accueille aussi bien des titres courts ("Résultat") que des phrases longues ("Quelles
+// sont les mesures actuelles du vélo ?"), et Bebas Neue (police display condensée) casse
+// la lisibilité sur du texte long. Réservé aux vrais titres héros courts, au cas par cas.
+function ScreenShell({ eyebrow, eyebrowColor = 'text-gold', title, subtitle, children, footer }) {
   return (
-    <div
-      className="w-full h-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden"
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
-    >
+    <div className="w-full h-screen bg-bg text-text font-sans flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto">
         <div className="px-6 pt-10 pb-8 max-w-md mx-auto w-full">
-          {eyebrow && (
-            <div className={`text-xs tracking-widest uppercase mb-2 ${eyebrowColor}`} style={{ fontFamily: 'ui-monospace, monospace' }}>
-              {eyebrow}
-            </div>
-          )}
+          {eyebrow && <div className={`text-xs tracking-widest uppercase mb-2 font-mono ${eyebrowColor}`}>{eyebrow}</div>}
           {title && <h1 className="text-xl font-semibold mb-1">{title}</h1>}
           {subtitle}
           {children}
         </div>
       </div>
       {footer && (
-        <div className="px-6 py-5 border-t border-neutral-800 bg-neutral-950">
+        <div className="px-6 py-5 border-t border-border bg-bg">
           <div className="max-w-md mx-auto w-full space-y-3">{footer}</div>
         </div>
       )}
@@ -223,21 +214,16 @@ function ScreenShell({ eyebrow, eyebrowColor = 'text-amber-400', title, subtitle
 
 function StepCard({ icon: Icon, step, title, duration, children, accent }) {
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 flex gap-4">
-      <div
-        className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold ${accent}`}
-        style={{ fontFamily: 'ui-monospace, monospace' }}
-      >
-        {step}
-      </div>
+    <div className="rounded-card border border-border bg-surface p-4 flex gap-4">
+      <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold font-mono ${accent}`}>{step}</div>
       <div className="min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <Icon className="w-4 h-4 text-neutral-400 shrink-0" />
-          <h3 className="font-medium text-neutral-100">{title}</h3>
+          <Icon className="w-4 h-4 text-text-faint shrink-0" />
+          <h3 className="font-medium text-text">{title}</h3>
         </div>
-        <p className="text-sm text-neutral-400 leading-relaxed">{children}</p>
+        <p className="text-sm text-text-dim leading-relaxed">{children}</p>
         {duration && (
-          <div className="flex items-center gap-1.5 mt-2 text-xs text-neutral-400" style={{ fontFamily: 'ui-monospace, monospace' }}>
+          <div className="flex items-center gap-1.5 mt-2 text-xs text-text-faint font-mono">
             <Timer className="w-3 h-3" /> {duration}
           </div>
         )}
@@ -248,11 +234,11 @@ function StepCard({ icon: Icon, step, title, duration, children, accent }) {
 
 function GearItem({ icon: Icon, title, children }) {
   return (
-    <div className="flex gap-3 py-3 border-b border-neutral-800 last:border-b-0">
-      <Icon className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+    <div className="flex gap-3 py-3 border-b border-border last:border-b-0">
+      <Icon className="w-4 h-4 text-cyan shrink-0 mt-0.5" />
       <div className="min-w-0">
-        <div className="text-sm text-neutral-200">{title}</div>
-        <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{children}</p>
+        <div className="text-sm text-text">{title}</div>
+        <p className="text-xs text-text-faint mt-0.5 leading-relaxed">{children}</p>
       </div>
     </div>
   );
@@ -359,22 +345,22 @@ function WelcomeScreen({ onStart, historyCount, onViewHistory }) {
 function NumberField({ label, value, onChange, suffix, required, hint }) {
   return (
     <div>
-      <label className="flex items-center justify-between gap-3 text-sm text-neutral-200">
+      <label className="flex items-center justify-between gap-3 text-sm text-text">
         <span>
           {label}
-          {required && <span className="text-amber-400"> *</span>}
+          {required && <span className="text-gold"> *</span>}
         </span>
         <span className="flex items-center gap-2">
           <input
             type="number"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="w-24 bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-neutral-100 text-right focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="w-24 bg-surface-2 border border-border rounded px-2 py-1.5 text-text text-right focus:outline-none focus:ring-2 focus:ring-gold"
           />
-          {suffix && <span className="text-xs text-neutral-500 w-6">{suffix}</span>}
+          {suffix && <span className="text-xs text-text-faint w-6">{suffix}</span>}
         </span>
       </label>
-      {hint && <p className="text-xs text-neutral-500 mt-1 pr-16 leading-relaxed">{hint}</p>}
+      {hint && <p className="text-xs text-text-faint mt-1 pr-16 leading-relaxed">{hint}</p>}
     </div>
   );
 }
