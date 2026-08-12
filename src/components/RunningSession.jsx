@@ -27,6 +27,8 @@ import {
 import {
   cadenceGainPct,
   cadenceTargetSpm,
+  CADENCE_PLAUSIBLE_MAX,
+  CADENCE_PLAUSIBLE_MIN,
   runRunningEngine,
   suggestNextRunTrial,
 } from '../engine/running-gait-engine';
@@ -64,19 +66,27 @@ function CadenceInput({ value, onChange, label }) {
   const [steps, setSteps] = useState('');
   const [durationS, setDurationS] = useState('30');
 
-  const computed = (() => {
-    const s = Number(steps);
-    const d = Number(durationS);
-    if (!(s > 0) || !(d > 0)) return null;
-    return computeCadenceSpm(s, d);
-  })();
+  const cadenceFrom = (s, d) => (Number(s) > 0 && Number(d) > 0 ? computeCadenceSpm(Number(s), Number(d)) : null);
+  const computed = cadenceFrom(steps, durationS);
 
-  // Remonte la valeur calculée dès qu'elle change, pour que le parent n'ait pas à connaître le
-  // mode de saisie choisi.
-  useEffect(() => {
-    if (mode === 'count') onChange(computed);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [computed, mode]);
+  // BUG CORRIGÉ : la valeur remontait au parent via un useEffect sur [computed, mode]. Cet effet
+  // s'exécute aussi AU MONTAGE, avec des champs vides, donc avec computed = null — il écrasait
+  // donc systématiquement la valeur dont le parent était initialisé. Concrètement : ouvrir
+  // "Modifier" depuis l'écran de session effaçait la cadence spontanée déjà mesurée, faisait
+  // disparaître l'aperçu des essais et désactivait "Continuer", rendant impossible de changer la
+  // seule vitesse du tapis sans recompter ses appuis. Même effet en rouvrant l'étape cadence d'un
+  // essai, et à chaque bascule entre les deux modes de saisie.
+  //
+  // On remonte donc la valeur depuis les gestionnaires de saisie, jamais depuis un effet : rien
+  // n'est poussé tant que l'utilisateur n'a pas effectivement tapé quelque chose.
+  const editSteps = (v) => {
+    setSteps(v);
+    onChange(cadenceFrom(v, durationS));
+  };
+  const editDuration = (v) => {
+    setDurationS(v);
+    onChange(cadenceFrom(steps, v));
+  };
 
   return (
     <div className="rounded-card border border-border bg-surface p-4 space-y-3">
@@ -105,8 +115,8 @@ function CadenceInput({ value, onChange, label }) {
 
       {mode === 'count' ? (
         <>
-          <NumberField label="Appuis comptés" value={steps} onChange={setSteps} required />
-          <NumberField label="Sur une durée de" value={durationS} onChange={setDurationS} suffix="s" required />
+          <NumberField label="Appuis comptés" value={steps} onChange={editSteps} required />
+          <NumberField label="Sur une durée de" value={durationS} onChange={editDuration} suffix="s" required />
           <p className="text-xs text-text-faint leading-relaxed">
             Compte <strong className="text-text-dim">chaque</strong> pied qui touche le tapis, pas les foulées — une
             foulée fait deux appuis. Compter les foulées donnerait une cadence deux fois trop basse et fausserait tout
@@ -119,6 +129,14 @@ function CadenceInput({ value, onChange, label }) {
                 <div className="text-xs text-text-faint">
                   {steps} appuis ÷ {durationS} s × 60
                 </div>
+              </>
+            ) : value > 0 ? (
+              // Cas de la ré-ouverture d'un formulaire déjà rempli : les champs de comptage sont
+              // vides mais la valeur du parent est intacte. Sans cette branche, l'écran laissait
+              // croire qu'il n'y avait plus de cadence enregistrée.
+              <>
+                <div className="font-display text-2xl text-cyan">{value} pas/min</div>
+                <div className="text-xs text-text-faint">déjà mesurée — recompte seulement si tu veux la remplacer</div>
               </>
             ) : (
               <div className="text-xs text-text-faint">Renseigne les deux champs pour obtenir ta cadence.</div>
@@ -234,7 +252,11 @@ function RunProfileForm({ initial, onSubmit, onCancel }) {
   const [cadence, setCadence] = useState(initial?.selfSelectedCadenceSpm ?? null);
   const [goal, setGoal] = useState(initial?.goal ?? null);
 
-  const valid = Number(heightCm) > 0 && Number(testSpeedKmh) > 0 && cadence > 0;
+  // Mêmes bornes que le moteur, et non un simple "> 0". Sans ça, une cadence saisie en FOULÉES
+  // (ex. 85 au lieu de 170) passait la saisie, l'athlète filmait trois essais de dix minutes et
+  // tapait 90 points, et ne découvrait le refus qu'à l'analyse finale.
+  const cadencePlausible = cadence >= CADENCE_PLAUSIBLE_MIN && cadence <= CADENCE_PLAUSIBLE_MAX;
+  const valid = Number(heightCm) > 0 && Number(testSpeedKmh) > 0 && cadencePlausible;
 
   return (
     <ScreenShell
@@ -288,7 +310,21 @@ function RunProfileForm({ initial, onSubmit, onCancel }) {
         <CadenceInput value={cadence} onChange={setCadence} label="Ta cadence spontanée à cette vitesse" />
       </div>
 
-      {cadence > 0 && (
+      {cadence > 0 && !cadencePlausible && (
+        <div className="rounded-card border border-gold/30 bg-gold/5 p-4 mb-6">
+          <p className="text-sm text-gold/90 leading-relaxed">
+            {cadence} pas/min est hors de la plage plausible en course ({CADENCE_PLAUSIBLE_MIN}-
+            {CADENCE_PLAUSIBLE_MAX}).
+          </p>
+          <p className="text-xs text-gold/70 mt-1 leading-relaxed">
+            {cadence < CADENCE_PLAUSIBLE_MIN
+              ? "L'erreur la plus fréquente est de compter les foulées au lieu des appuis : une foulée fait deux appuis, donc le résultat est deux fois trop bas. Recompte chaque pied qui touche le tapis."
+              : "Vérifie la durée de comptage : une durée trop courte saisie fait grimper artificiellement la cadence."}
+          </p>
+        </div>
+      )}
+
+      {cadencePlausible && (
         <div className="rounded-card border border-cyan/20 bg-cyan/5 p-4 mb-6">
           <div className="text-xs tracking-widest text-cyan uppercase mb-1 font-mono">Tes essais seront</div>
           <div className="font-mono text-sm text-cyan space-y-0.5 mt-2">
@@ -575,8 +611,6 @@ const VIOLATION_LABELS = {
   invalid_measurement: (v) => 'Mesure invalide (deux points confondus sur l’image)',
   speed_mismatch: (v) => `Filmé à ${v.value} km/h au lieu de ${v.bound} km/h — non comparable aux autres essais`,
   cadence_implausible: (v) => `Cadence de ${v.value} pas/min invraisemblable — appuis ou durée probablement mal comptés`,
-  vertical_oscillation_implausible: (v) =>
-    `Oscillation verticale de ${v.value} impossible physiquement — les deux points de bassin ont probablement été placés sur les mauvaises images, ou au mauvais endroit`,
 };
 
 const WARNING_LABELS = {
@@ -585,6 +619,8 @@ const WARNING_LABELS = {
   stiff_landing: (v) => `Genou peu fléchi à l'attaque (${v.value}°, repère : au moins ${v.bound}°)`,
   trunk_upright: (v) => `Buste très droit (${v.value}°, repère : au moins ${v.bound}°)`,
   trunk_overleaned: (v) => `Buste très penché (${v.value}°, repère : sous ${v.bound}°)`,
+  vertical_oscillation_implausible: (v) =>
+    `Oscillation verticale de ${v.value} impossible physiquement — les deux points de bassin ont dû être placés sur les mauvaises images. Valeur écartée du calcul ; le reste de l'essai est conservé.`,
 };
 
 function formatEntry(labels, v) {
@@ -735,10 +771,14 @@ function RunResultsScreen({ result, profile, onBack }) {
       {result.baseline_dominated && (
         <div className="rounded-card border border-cyan/30 bg-cyan/5 p-4 mb-6">
           <div className="text-xs tracking-widest text-cyan uppercase mb-1 font-mono">Ce que dit ce bilan</div>
+          {/* On nomme la cadence qui domine plutôt que de supposer qu'elle est plus élevée : ce
+              n'est pas garanti, et l'affirmer sans le vérifier produisait une phrase fausse dès
+              qu'un essai plus lent battait la référence. */}
           <p className="text-sm text-cyan/90 leading-relaxed">
             Ta cadence spontanée ({result.baseline_cadence_spm} pas/min) est battue sur les deux
-            tableaux à la fois : au moins un des essais plus rapides est à la fois moins chargé et
-            au moins aussi économique.
+            tableaux à la fois
+            {result.baseline_dominated_by_spm ? ` par ton essai à ${result.baseline_dominated_by_spm} pas/min` : ''} :
+            cet essai est à la fois moins chargé et au moins aussi économique.
           </p>
           <p className="text-xs text-cyan/70 mt-1.5 leading-relaxed">
             C'est cohérent avec la littérature : les coureurs choisissent spontanément une foulée

@@ -276,6 +276,47 @@ sommet (§2.6) — avant correction, il gagnait l'axe économie par construction
 
 ---
 
+## 4bis. Seconde passe — défauts trouvés APRÈS les correctifs
+
+Les correctifs ci-dessus ont été relus, dont un en revue adversariale indépendante. Huit défauts
+supplémentaires, tous corrigés. Trois méritent d'être retenus parce qu'ils illustrent des pièges
+récurrents.
+
+**Un correctif d'audit en a cassé un autre.** Rendre la composante d'oscillation verticale
+relative à la session a fait perdre au score d'économie la capacité d'atteindre 100 (le pire
+essai reçoit 0 par construction, donc le meilleur plafonne vers 70), pendant que le score de
+charge restait absolu. Mesurer la distance au point brut (100,100) revenait alors à « le plus
+proche de 100 en charge » : **« équilibré » désignait systématiquement le même essai que
+« charge minimale »**. Les axes sont désormais renormalisés sur leur étendue observée. Leçon :
+en changeant l'échelle d'un axe, vérifier tout ce qui compare les deux.
+
+**Un garde-fou disproportionné.** J'avais traité une oscillation verticale aberrante comme une
+exclusion d'essai, par symétrie avec la cadence invraisemblable. Erreur d'échelle : l'oscillation
+est explicitement optionnelle et le moteur sait s'en passer, alors qu'exclure l'essai jetait ses
+cinq mesures d'appui (30 points tapés à la main) et sa cadence — et pouvait faire passer une
+session de 3 essais valides à 2, donc inanalysable, sans aucun moyen de refaire les deux seules
+étapes fautives. Repassé en avertissement, avec la valeur simplement écartée du calcul.
+
+**Une validation trop tardive.** Le formulaire de profil n'exigeait qu'une cadence `> 0` alors
+que le moteur exige [130, 220]. Un athlète comptant ses **foulées** au lieu de ses appuis (85 au
+lieu de 170) passait la saisie, filmait trois essais de dix minutes, tapait 90 points, et ne
+découvrait le refus qu'à l'analyse finale. Les bornes du moteur sont maintenant appliquées à la
+saisie, avec le message qui nomme l'erreur.
+
+Les cinq autres : un `useEffect` qui écrasait la cadence du parent au montage (rouvrir
+« Modifier » effaçait la mesure et bloquait l'écran) ; l'essai de référence identifié par ordre
+de filmage plutôt que par proximité à 0% ; une affirmation non vérifiée dans l'interface
+(« un des essais **plus rapides** », faux quand un essai plus lent domine) ; l'absence de
+confirmation sur « Reprendre » alors que « Annuler » en demandait une pour la même perte ; et une
+valeur aberrante qui contaminait le maximum de session.
+
+**Ce que la revue a explicitement blanchi** : la géométrie et les conventions de signe (vérifiées
+numériquement, invariantes au sens de filmage), la machinerie de mesure à 7 étapes, la migration
+des sessions enregistrées avant l'oscillation verticale, et l'absence de régression côté vélo —
+les extractions vers `shared/` et `ui.jsx` sont identiques aux originales, fonction par fonction.
+
+---
+
 ## 5. Ce qui reste ouvert
 
 - **§2.1 et §2.2 sont insolubles en l'état** : aucun seuil publié n'existe pour le tibia ni

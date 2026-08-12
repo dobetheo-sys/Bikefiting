@@ -126,7 +126,7 @@ src/
 
 ```bash
 npm install
-npm test          # 130 tests (vélo + course), tous passants au moment de l’écriture de ce README
+npm test          # 138 tests (vélo + course), tous passants au moment de l’écriture de ce README
 npm run typecheck
 npm run dev        # app de dev (nécessite un navigateur avec caméra pour la capture réelle)
 npm run build       # build de prod (vérifié, voir dist/)

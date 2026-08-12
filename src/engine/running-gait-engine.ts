@@ -93,8 +93,12 @@ const SPEED_TOLERANCE_KMH = 0.3; // [DEFAULT] sur tapis l'allure est exacte ; to
 // coureur à 170 pas/min qui compte ses FOULÉES saisit 85, tombe sous le plancher, et l'essai est
 // écarté au lieu de fausser silencieusement tout le scoring — qui est entièrement relatif à
 // cette valeur (cf. docs/AUDIT_MOTEUR_COURSE.md §2.11).
-const CADENCE_PLAUSIBLE_MIN = 130;
-const CADENCE_PLAUSIBLE_MAX = 220;
+//
+// Exportées pour que le formulaire de profil applique EXACTEMENT les mêmes bornes : sans ça, une
+// cadence spontanée saisie en foulées (ex. 85) passait la saisie, l'athlète filmait trois essais
+// de dix minutes et tapait 90 points, et ne découvrait le refus qu'à l'analyse finale.
+export const CADENCE_PLAUSIBLE_MIN = 130;
+export const CADENCE_PLAUSIBLE_MAX = 220;
 
 // [DEFAULT] Bornes de plausibilité physique du ratio d'oscillation verticale (amplitude
 // verticale du bassin / longueur de jambe). Une oscillation typique de 6-11 cm sur une jambe
@@ -102,6 +106,10 @@ const CADENCE_PLAUSIBLE_MAX = 220;
 // l'erreur de mesure franche, pas une foulée inhabituelle.
 const VO_PLAUSIBLE_MIN = 0.02;
 const VO_PLAUSIBLE_MAX = 0.3;
+
+export function isPlausibleVerticalOscillation(v: number | undefined): boolean {
+  return v !== undefined && Number.isFinite(v) && v >= VO_PLAUSIBLE_MIN && v <= VO_PLAUSIBLE_MAX;
+}
 
 // Seuils d'AVERTISSEMENT — jamais exclusoires.
 // [SOURCED, indicatif] Flexion typique au contact : 15-25° (corrigé à l'audit — la V1 annonçait
@@ -175,16 +183,21 @@ export function validateRunTrial(trial: RunTrial, profile: RunnerProfile): Valid
   // Cadence aberrante = erreur de comptage (pas assez d'appuis comptés, durée mal saisie),
   // pas une foulée exotique. On exclut pour protéger le reste du calcul, qui est entièrement
   // relatif à la cadence.
-  // Même famille de garde-fou que la cadence : une oscillation verticale hors de portée
-  // physique signale deux taps de bassin mal placés (ou placés sur des images qui ne sont pas
-  // celles du point haut et du point bas), pas une foulée exotique. Une oscillation typique est
-  // de 6-11 cm pour une jambe d'environ 90 cm, soit un ratio de 0.07-0.12 ; en dehors de
-  // [0.02, 0.30] la mesure n'a pas de sens physique. Sans ce test, un ratio de 0.55 était accepté
-  // en silence et faussait le score d'économie de TOUS les essais de la session, puisque la
-  // composante d'oscillation est notée relativement au maximum de la session.
+  // Une oscillation verticale hors de portée physique signale deux taps de bassin mal placés
+  // (ou placés sur des images qui ne sont pas celles du point haut et du point bas), pas une
+  // foulée exotique. Une oscillation typique est de 6-11 cm pour une jambe d'environ 90 cm, soit
+  // un ratio de 0.07-0.12 ; en dehors de [0.02, 0.30] la mesure n'a pas de sens physique.
+  //
+  // AVERTISSEMENT et non violation. La première version excluait l'essai — disproportionné :
+  // l'oscillation est explicitement optionnelle, le moteur sait s'en passer, et deux taps de
+  // bassin ratés faisaient perdre les CINQ mesures d'appui de l'essai (30 points tapés) plus sa
+  // cadence, ce qui pouvait faire passer une session de 3 essais valides à 2 et la rendre
+  // inanalysable. La valeur est simplement écartée du calcul (cf. le filtre dans
+  // runRunningEngine), ce qui fait retomber la session sur le chemin sans oscillation — dégradé
+  // mais documenté, et surtout réversible sans tout refaire.
   const vo = m.verticalOscillationRatio;
-  if (vo !== undefined && (!Number.isFinite(vo) || vo < VO_PLAUSIBLE_MIN || vo > VO_PLAUSIBLE_MAX)) {
-    violations.push({
+  if (vo !== undefined && !isPlausibleVerticalOscillation(vo)) {
+    warnings.push({
       param: 'vertical_oscillation_implausible',
       value: Number.isFinite(vo) ? (vo as number) : NaN,
       bound: (vo as number) < VO_PLAUSIBLE_MIN ? VO_PLAUSIBLE_MIN : VO_PLAUSIBLE_MAX,
@@ -510,9 +523,12 @@ export function runRunningEngine(trials: RunTrial[], profile: RunnerProfile) {
   // L'oscillation verticale n'entre dans le score que si TOUS les essais valides l'ont mesurée
   // (cf. computeEconomyScore) — sinon les essais mesurés seraient comparés aux non mesurés sur
   // une composante que ces derniers n'ont pas.
+  // Filtre sur la PLAUSIBILITÉ, pas seulement sur la finitude : une valeur aberrante laissée ici
+  // deviendrait le maximum de la session et écraserait la composante d'oscillation de tous les
+  // autres essais, puisqu'elle est notée relativement à ce maximum.
   const voRatios = validTrials
     .map((t) => t.metrics.verticalOscillationRatio)
-    .filter((v): v is number => Number.isFinite(v));
+    .filter((v): v is number => isPlausibleVerticalOscillation(v));
   const useVO = voRatios.length === validTrials.length && voRatios.length > 0;
   const cohortMaxVORatio = useVO ? Math.max(...voRatios) : 0;
 
@@ -542,10 +558,31 @@ export function runRunningEngine(trials: RunTrial[], profile: RunnerProfile) {
   // l'athlète. Depuis que le sommet de la courbe d'économie est correctement placé (~+3%), ce
   // cas arrive dans la majorité des sessions — le taire reviendrait à faire filmer un essai de
   // dix minutes pour le jeter en silence.
-  const baseline = scored.find(
-    (t) => Math.abs(cadenceGainPct(t.metrics.cadenceSpm, ssc)) <= SWEEP_MATCH_TOLERANCE_PCT
-  );
+  //
+  // On prend l'essai le PLUS PROCHE de 0%, pas le premier trouvé dans la fenêtre de tolérance :
+  // deux essais peuvent tomber dans les ±2.5% (typiquement quand une cible au métronome est
+  // sous-atteinte), et l'ordre du tableau est l'ordre de filmage, pas l'ordre de cadence. La
+  // version précédente désignait alors le mauvais essai comme référence.
+  const baseline = scored.reduce<ScoredRunTrial | null>((best, t) => {
+    const gap = Math.abs(cadenceGainPct(t.metrics.cadenceSpm, ssc));
+    if (gap > SWEEP_MATCH_TOLERANCE_PCT) return best;
+    if (!best) return t;
+    return gap < Math.abs(cadenceGainPct(best.metrics.cadenceSpm, ssc)) ? t : best;
+  }, null);
   const baselineDominated = baseline ? !front.some((t) => t.id === baseline.id) : false;
+  // L'essai qui domine la référence n'est pas forcément plus rapide qu'elle — le dire sans le
+  // vérifier serait une affirmation fausse dans les cas où la référence est battue par un essai
+  // plus lent. On remonte la cadence réelle du dominant pour que l'affichage n'ait rien à
+  // supposer.
+  const baselineDominatedBy =
+    baseline && baselineDominated
+      ? front.find(
+          (t) =>
+            t.chargeScore >= baseline.chargeScore &&
+            t.economyScore >= baseline.economyScore &&
+            (t.chargeScore > baseline.chargeScore || t.economyScore > baseline.economyScore)
+        )?.metrics.cadenceSpm
+      : undefined;
 
   // Fallback si "équilibré" n'existe pas (front à moins de 3 points, cf. selectRunProfiles) :
   // sans objectif déclaré on met en avant la charge minimale, qui est l'axe le mieux documenté.
@@ -561,6 +598,7 @@ export function runRunningEngine(trials: RunTrial[], profile: RunnerProfile) {
     cadence_spread_sufficient: cadenceSpreadPct >= MIN_CADENCE_SPREAD_PCT,
     baseline_dominated: baselineDominated,
     baseline_cadence_spm: baseline?.metrics.cadenceSpm,
+    baseline_dominated_by_spm: baselineDominatedBy,
     recommended: recommendedKey,
     profiles: profiles && {
       charge_min: toRunOutputProfile(profiles.charge_min, profile),

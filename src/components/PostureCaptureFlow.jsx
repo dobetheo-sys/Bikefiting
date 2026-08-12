@@ -942,6 +942,15 @@ export default function PostureCaptureFlow({ onCaptured, initialMode, onCancel }
   const retake = () => {
     // Reprendre la capture entière invalide toute progression de mesure déjà faite (les
     // images choisies venaient de l'ancienne vidéo) — repart de l'étape 0.
+    //
+    // Confirmation ajoutée : "Annuler" demandait confirmation pour exactement la même perte,
+    // alors que ce bouton-ci, placé juste à côté sur l'écran de choix d'image, effaçait tout en
+    // silence. Sans conséquence tant que la course n'existait pas (2 étapes au maximum côté
+    // vélo) ; depuis le passage à 7 étapes, un clic à l'étape 6 jetait 5 appuis, soit 30 points
+    // tapés à la main. Même garde que handleCancelMeasure : on ne demande que s'il y a
+    // réellement quelque chose à perdre.
+    const hasProgress = measureResults.length > 0 || measurePoints.length > 0;
+    if (hasProgress && !confirm('Reprendre la capture ? Les étapes de mesure déjà validées pour cet essai seront perdues.')) return;
     setCapturedUrl(null);
     setCapturedMeta(null);
     setTaps([]);

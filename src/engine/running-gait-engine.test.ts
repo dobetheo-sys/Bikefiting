@@ -246,28 +246,75 @@ describe('selectRunProfiles — les deux axes doivent être renormalisés avant 
   });
 });
 
-// Même famille de garde-fou que la cadence invraisemblable : sans lui, deux taps de bassin mal
-// placés faussaient le score d'économie de TOUS les essais, la composante d'oscillation étant
-// notée relativement au maximum de la session.
+// Sans ce garde-fou, deux taps de bassin mal placés faussaient le score d'économie de TOUS les
+// essais, la composante d'oscillation étant notée relativement au maximum de la session. Mais il
+// doit rester un AVERTISSEMENT : exclure l'essai ferait perdre ses cinq mesures d'appui (30
+// points tapés) et sa cadence pour une métrique explicitement optionnelle, et pouvait rendre une
+// session de 3 essais inanalysable.
 describe('validateRunTrial — oscillation verticale hors de portée physique', () => {
-  test('ratio 0.55 (bassin montant de plus d\'une demi-jambe) -> essai exclu', () => {
+  test('ratio 0.55 -> avertissement, essai CONSERVÉ', () => {
     const v = validateRunTrial(mkTrial('t', 176, { verticalOscillationRatio: 0.55 }), profile);
-    assert.equal(v.valid, false);
-    assert.equal(v.violations[0]?.param, 'vertical_oscillation_implausible');
+    assert.equal(v.valid, true);
+    assert.equal(v.warnings.some((w) => w.param === 'vertical_oscillation_implausible'), true);
   });
 
-  test('ratio 0.005 (quasi nul) -> essai exclu', () => {
+  test('ratio 0.005 (quasi nul) -> avertissement, essai conservé', () => {
     const v = validateRunTrial(mkTrial('t', 176, { verticalOscillationRatio: 0.005 }), profile);
-    assert.equal(v.valid, false);
-    assert.equal(v.violations[0]?.param, 'vertical_oscillation_implausible');
+    assert.equal(v.valid, true);
+    assert.equal(v.warnings.some((w) => w.param === 'vertical_oscillation_implausible'), true);
   });
 
-  test('ratio plausible (0.10) -> essai valide', () => {
-    assert.equal(validateRunTrial(mkTrial('t', 176, { verticalOscillationRatio: 0.1 }), profile).valid, true);
+  test('ratio plausible (0.10) -> aucun avertissement', () => {
+    const v = validateRunTrial(mkTrial('t', 176, { verticalOscillationRatio: 0.1 }), profile);
+    assert.equal(v.valid, true);
+    assert.equal(v.warnings.some((w) => w.param === 'vertical_oscillation_implausible'), false);
   });
 
-  test('oscillation non mesurée -> aucune violation (elle reste optionnelle)', () => {
+  test('oscillation non mesurée -> aucun avertissement (elle reste optionnelle)', () => {
     assert.equal(validateRunTrial(mkTrial('t', 176), profile).valid, true);
+  });
+
+  test('une valeur aberrante n\'écrase pas la composante d\'oscillation des autres essais', () => {
+    // Sans le filtre de plausibilité, 0.55 devenait le maximum de la session et écrasait le
+    // score des deux essais correctement mesurés.
+    const r = runRunningEngine(
+      [
+        mkTrial('a', 168, { verticalOscillationRatio: 0.1 }),
+        mkTrial('b', 176, { verticalOscillationRatio: 0.11 }),
+        mkTrial('c', 185, { verticalOscillationRatio: 0.55 }),
+      ],
+      profile
+    );
+    assert.equal(r.status, 'ok');
+    if (r.status !== 'ok') return;
+    assert.equal(r.trials_valid, 3); // l'essai est conservé
+    assert.equal(r.vertical_oscillation_used, false); // mais l'axe retombe sur le chemin sans oscillation
+  });
+});
+
+// L'essai de référence doit être le plus PROCHE de 0%, pas le premier trouvé dans la fenêtre de
+// tolérance : l'ordre du tableau est l'ordre de filmage, et deux essais peuvent tomber dans les
+// ±2.5% quand une cible au métronome est sous-atteinte.
+describe('runRunningEngine — identification de l\'essai de référence', () => {
+  test('deux essais dans la fenêtre -> la référence est le plus proche de la cadence spontanée', () => {
+    const r = runRunningEngine(
+      [mkTrial('undershoot', 171), mkTrial('vraie_reference', 168), mkTrial('rapide', 185)],
+      profile
+    );
+    assert.equal(r.status, 'ok');
+    if (r.status !== 'ok') return;
+    assert.equal(r.baseline_cadence_spm, 168);
+  });
+
+  test('quand la référence est dominée, on nomme la cadence qui la domine', () => {
+    const r = runRunningEngine(
+      [mkTrial('libre', 168), mkTrial('plus5', 176), mkTrial('plus10', 185)],
+      profile
+    );
+    assert.equal(r.status, 'ok');
+    if (r.status !== 'ok') return;
+    assert.equal(r.baseline_dominated, true);
+    assert.ok(r.baseline_dominated_by_spm, 'la cadence dominante doit être remontée');
   });
 });
 
