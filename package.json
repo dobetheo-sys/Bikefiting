@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Moteur d'analyse posturale aéro pour cyclisme/triathlon (position prolongateurs) — projet parallèle à EnduraBuild",
   "scripts": {
-    "test": "tsx --test src/engine/*.test.ts src/capture/*.test.ts src/swim-engine/*.test.ts",
+    "test": "tsx --test src/engine/*.test.ts src/capture/*.test.ts src/swim-engine/*.test.ts src/swim-capture/*.test.ts",
     "typecheck": "tsc --noEmit",
     "predev": "node scripts/copy-mediapipe-wasm.mjs",
     "prebuild": "node scripts/copy-mediapipe-wasm.mjs",
