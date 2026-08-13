@@ -62,20 +62,30 @@ export interface Trial {
   id: string;
   angles: TrialAngles;
   frontal: FrontalCapture;
-  // saddleSetbackMm/hasAeroBars optionnels : ajoutés après coup (retour terrain), optionnels
-  // pour ne pas casser les Trial déjà persistés en localStorage avant l'ajout des champs.
-  // saddleSetbackMm : le recul de selle manquait alors qu'il conditionne directement l'angle
-  // hanche/genou à un trunk angle donné (retour d'audit bikefitting). hasAeroBars : purement
-  // informatif (affiché, pas utilisé par le moteur) — le vélo a-t-il des prolongateurs pour cet
-  // essai, ça change beaucoup l'aérodynamisme et la position des mains.
+  // saddleSetbackMm/hasAeroBars/saddleTiltDeg optionnels : ajoutés après coup (retour terrain),
+  // optionnels pour ne pas casser les Trial déjà persistés en localStorage avant l'ajout des
+  // champs. saddleSetbackMm : le recul de selle manquait alors qu'il conditionne directement
+  // l'angle hanche/genou à un trunk angle donné (retour d'audit bikefitting). hasAeroBars : le
+  // vélo a-t-il des prolongateurs pour cet essai — ça change beaucoup l'aérodynamisme et la
+  // position des mains, et depuis l'audit du 12/08/2026 assouplit aussi la plage tronc/genou
+  // "aéro" en avertissement plutôt qu'exclusion quand hasAeroBars=false (cf. validateTrial et
+  // computeComfortScore ci-dessous : cette plage n'a pas de sens sur une position route sans
+  // prolongateurs). saddleTiltDeg : inclinaison de selle (nez haut/bas) — purement informatif
+  // (affiché, pas utilisé par le moteur) pour l'instant, faute de seuil sourcé pour la pénaliser
+  // sans inventer une fausse précision (même logique que hasAeroBars avant ce correctif).
   // Nommé "deltas" mais contient en réalité les mesures ABSOLUES du vélo pour cet essai (pas une
   // différence par rapport à un essai de référence) — retour terrain "ça marche pas" : le
   // formulaire demandait des différences, les utilisateurs entraient naturellement leurs mesures
   // réelles (ex. 745mm de hauteur de selle), ce qui n'a de sens que comme valeur absolue. Le nom
-  // du champ est conservé pour ne pas casser les Trial déjà persistés en localStorage. Ce champ
-  // n'est jamais lu par validateTrial/computeComfortScore/computeAeroScore (purement descriptif,
-  // affiché tel quel via toOutputProfile) donc ce changement de sémantique n'affecte pas le scoring.
-  deltas: { saddleHeightMm: number; saddleSetbackMm?: number; reachMm: number; dropMm: number; hasAeroBars?: boolean };
+  // du champ est conservé pour ne pas casser les Trial déjà persistés en localStorage.
+  deltas: {
+    saddleHeightMm: number;
+    saddleSetbackMm?: number;
+    reachMm: number;
+    dropMm: number;
+    hasAeroBars?: boolean;
+    saddleTiltDeg?: number;
+  };
 }
 
 export interface Violation {
@@ -143,11 +153,16 @@ const KNEE_MAX = 150; // [convergence de sources pro] angle interne hanche-genou
 const ANKLE_FLAG = 22; // [SOURCED] typique 15-20° (BikeDynamics), flag au-delà — jamais exclusoire
 const WRIST_WARN = 15; // [DEFAULT] non sourcé — warning uniquement, jamais exclusoire (cf. §10 du spec)
 
-export function validateTrial(angles: TrialAngles, profile: AthleteProfile): ValidationResult {
+// hasAeroBars : optionnel (essais déjà persistés avant l'ajout du champ, cf. Trial['deltas']).
+// undefined/true = comportement historique inchangé (prolongateurs supposés par défaut).
+// Correctif d'audit (12/08/2026) : un essai explicitement marqué hasAeroBars=false (position
+// route testée sans prolongateurs) ne doit pas être jugé sur la plage tronc/genou pensée pour
+// une position aéro/TT — même assouplissement (exclusion -> avertissement) que goal='comfort'.
+export function validateTrial(angles: TrialAngles, profile: AthleteProfile, hasAeroBars?: boolean): ValidationResult {
   const violations: Violation[] = [];
   const warnings: Violation[] = [];
   const margins: Record<string, number> = {};
-  const goal = profile.goal ?? 'aero';
+  const aeroRangeIsExclusionary = (profile.goal ?? 'aero') === 'aero' && hasAeroBars !== false;
 
   // Garde-fou défensif : angleAt()/angleVsHorizontal() (capture-processing.ts) retournent NaN
   // quand 2 points tapés coïncident. La couche UI (measure screen) filtre déjà ce cas avant
@@ -170,20 +185,21 @@ export function validateTrial(angles: TrialAngles, profile: AthleteProfile): Val
   }
   margins.hip_deg = round1(angles.hip.mean - HIP_FLOOR_ABS);
 
-  // Tronc : exclusoire en objectif 'aero' (plage TT/tri sourcée) ; avertissement seulement en
-  // 'comfort', cf. commentaire sur AthleteProfile.goal.
+  // Tronc : exclusoire en objectif 'aero' AVEC prolongateurs (plage TT/tri sourcée) ;
+  // avertissement seulement en 'comfort' (cf. AthleteProfile.goal) OU si hasAeroBars=false
+  // (position route testée sans prolongateurs — cette plage n'a pas de sens à lui appliquer).
   if (angles.trunk.mean < TRUNK_MIN) {
     const entry: Violation = { param: 'trunk_min', value: angles.trunk.mean, bound: TRUNK_MIN };
-    (goal === 'aero' ? violations : warnings).push(entry);
+    (aeroRangeIsExclusionary ? violations : warnings).push(entry);
   }
   if (angles.trunk.mean > TRUNK_MAX) {
     const entry: Violation = { param: 'trunk_max', value: angles.trunk.mean, bound: TRUNK_MAX };
-    (goal === 'aero' ? violations : warnings).push(entry);
+    (aeroRangeIsExclusionary ? violations : warnings).push(entry);
   }
   margins.trunk_deg = round1(Math.min(angles.trunk.mean - TRUNK_MIN, TRUNK_MAX - angles.trunk.mean));
 
   // Genou : doit rester dans la plage sur tout le cycle (min/max), pas juste en moyenne.
-  // Exclusoire en 'aero' ; avertissement en 'comfort' (même raison que le tronc ci-dessus).
+  // Même gating que le tronc ci-dessus (aeroRangeIsExclusionary).
   // Audit fiabilité : `value`/`bound` reflètent maintenant le seuil RÉELLEMENT franchi (min si
   // trop plié, max si trop tendu) plutôt que systématiquement la moyenne + KNEE_MIN — l'ancien
   // comportement pouvait afficher une valeur qui a l'air dans la plage (la moyenne) à côté d'un
@@ -196,7 +212,7 @@ export function validateTrial(angles: TrialAngles, profile: AthleteProfile): Val
       value: tooFlexed ? angles.knee.min : angles.knee.max,
       bound: tooFlexed ? KNEE_MIN : KNEE_MAX,
     };
-    (goal === 'aero' ? violations : warnings).push(entry);
+    (aeroRangeIsExclusionary ? violations : warnings).push(entry);
   }
   margins.knee_deg = round1(Math.min(angles.knee.min - KNEE_MIN, KNEE_MAX - angles.knee.max));
 
@@ -237,10 +253,14 @@ export interface AdjustmentSuggestion {
 
 export function suggestNextAdjustment(t: Trial, profile: AthleteProfile): AdjustmentSuggestion | null {
   const hipTarget = HIP_TARGET_BY_FLEX[profile.hipFlexibilityScore];
-  // Le tronc ne cible la plage aéro [TRUNK_MIN,TRUNK_MAX] qu'en objectif 'aero' — en 'comfort'
-  // il n'y a pas de cible sourcée équivalente (cf. AthleteProfile.goal), donc pas de
-  // suggestion sur ce critère : gapDeg à 0 l'exclut simplement des candidats ci-dessous.
-  const trunkTargeted = (profile.goal ?? 'aero') === 'aero';
+  // Le tronc ET le genou ne ciblent leur plage aéro sourcée qu'en objectif 'aero' AVEC
+  // prolongateurs — même gating que validateTrial/computeComfortScore (aeroRangeIsExclusionary/
+  // aeroRangeApplies ci-dessus). Correctif d'audit (12/08/2026) : le genou n'était jusqu'ici PAS
+  // gaté du tout ici (contrairement au tronc), une incohérence trouvée en alignant les 3
+  // fonctions qui utilisent cette même plage — sans ce correctif, un essai 'comfort' ou sans
+  // prolongateurs se voyait quand même suggérer "monte/baisse la selle" pour viser une plage
+  // aéro que le reste du moteur ne lui applique plus. gapDeg à 0 exclut simplement le candidat.
+  const aeroRangeTargeted = (profile.goal ?? 'aero') === 'aero' && t.deltas.hasAeroBars !== false;
   const candidates: AdjustmentSuggestion[] = [
     {
       param: 'hip',
@@ -249,22 +269,22 @@ export function suggestNextAdjustment(t: Trial, profile: AthleteProfile): Adjust
     },
     {
       param: 'trunk_high',
-      gapDeg: trunkTargeted ? round1(Math.max(0, t.angles.trunk.mean - TRUNK_MAX)) : 0,
+      gapDeg: aeroRangeTargeted ? round1(Math.max(0, t.angles.trunk.mean - TRUNK_MAX)) : 0,
       message: `Tronc à ${t.angles.trunk.mean}°, au-dessus du seuil aéro de ${TRUNK_MAX}° — essaie d'augmenter le drop (cintre plus bas) ou le reach.`,
     },
     {
       param: 'trunk_low',
-      gapDeg: trunkTargeted ? round1(Math.max(0, TRUNK_MIN - t.angles.trunk.mean)) : 0,
+      gapDeg: aeroRangeTargeted ? round1(Math.max(0, TRUNK_MIN - t.angles.trunk.mean)) : 0,
       message: `Tronc à ${t.angles.trunk.mean}°, sous le minimum de ${TRUNK_MIN}° — essaie de réduire le drop pour te redresser un peu.`,
     },
     {
       param: 'knee_flexed',
-      gapDeg: round1(Math.max(0, KNEE_MIN - t.angles.knee.min)),
+      gapDeg: aeroRangeTargeted ? round1(Math.max(0, KNEE_MIN - t.angles.knee.min)) : 0,
       message: `Genou trop plié au point le plus fermé du cycle (${t.angles.knee.min}°, sous ${KNEE_MIN}°) — essaie de monter la selle.`,
     },
     {
       param: 'knee_extended',
-      gapDeg: round1(Math.max(0, t.angles.knee.max - KNEE_MAX)),
+      gapDeg: aeroRangeTargeted ? round1(Math.max(0, t.angles.knee.max - KNEE_MAX)) : 0,
       message: `Genou trop tendu au point le plus ouvert du cycle (${t.angles.knee.max}°, au-dessus de ${KNEE_MAX}°) — essaie de baisser la selle.`,
     },
   ];
@@ -288,15 +308,28 @@ export function computeComfortScore(t: Trial, profile: AthleteProfile, weights: 
   const hipGap = Math.max(0, hipTarget - t.angles.hip.mean); // en dessous de la cible = pénalité croissante
   score -= quadPenalty(hipGap, 0.3) * weights.lowerBack;
 
-  // Le tronc n'est pénalisé par rapport à la plage aéro [TRUNK_MIN,TRUNK_MAX] qu'en objectif
-  // 'aero' — en 'comfort' il n'y a pas de plage tronc sourcée équivalente (cf. commentaire sur
-  // AthleteProfile.goal), pénaliser quand même inventerait une cible non sourcée, alors que le
-  // confort réel d'un débutant peut très bien se situer à un tronc nettement plus redressé.
-  if ((profile.goal ?? 'aero') === 'aero') {
+  // Le tronc et le genou ne sont pénalisés par rapport à leur plage aéro sourcée qu'en objectif
+  // 'aero' AVEC prolongateurs (hasAeroBars) — même gating que validateTrial (aeroRangeIsExclusionary
+  // ci-dessus). En 'comfort' il n'y a pas de plage tronc/genou "confort" sourcée équivalente (cf.
+  // AthleteProfile.goal) ; sans prolongateurs (hasAeroBars=false, position route testée), pénaliser
+  // quand même sur une plage pensée pour une position aéro/TT n'a pas de sens non plus — dans les
+  // deux cas, inventer une cible non sourcée serait la fausse précision que ce moteur évite ailleurs.
+  const aeroRangeApplies = (profile.goal ?? 'aero') === 'aero' && t.deltas.hasAeroBars !== false;
+  if (aeroRangeApplies) {
     const trunkMid = (TRUNK_MIN + TRUNK_MAX) / 2;
     const trunkHalfRange = (TRUNK_MAX - TRUNK_MIN) / 2;
     const trunkGap = Math.abs(t.angles.trunk.mean - trunkMid) - trunkHalfRange;
     score -= quadPenalty(trunkGap, 0.5) * weights.neck;
+
+    // Correctif d'audit (12/08/2026) : weights.knees existe (recalibré par le feedback douleur
+    // genoux, cf. recalibrateWeights) mais n'était utilisé nulle part ici — un retour "genoux"
+    // répété n'avait donc aucun effet sur le score, contrairement aux 3 autres zones (nuque/bas
+    // du dos via hanche+tronc, mains via poignet). Même forme de pénalité que le tronc juste
+    // au-dessus (écart à la plage cible, quadratique).
+    const kneeMid = (KNEE_MIN + KNEE_MAX) / 2;
+    const kneeHalfRange = (KNEE_MAX - KNEE_MIN) / 2;
+    const kneeGap = Math.abs(t.angles.knee.mean - kneeMid) - kneeHalfRange;
+    score -= quadPenalty(kneeGap, 0.4) * weights.knees;
   }
 
   // Stabilité inter-cycles : variance élevée = moins fiable / moins confortable sur la durée
@@ -385,7 +418,7 @@ export function recalibrateWeights(current: SubjectiveWeights, history: Feedback
 export function runEngine(trials: Trial[], profile: AthleteProfile, weights: SubjectiveWeights) {
   const scored: ScoredTrial[] = trials.map((t) => ({
     ...t,
-    validation: validateTrial(t.angles, profile),
+    validation: validateTrial(t.angles, profile, t.deltas.hasAeroBars),
     comfortScore: computeComfortScore(t, profile, weights),
     aeroScore: 0, // calculé après normalisation cohort ci-dessous
   }));
