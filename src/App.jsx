@@ -586,6 +586,7 @@ function formatSetupValue(value) {
 function formatDeltas(deltas) {
   const parts = [`selle ${formatSetupValue(deltas.saddleHeightMm)}`];
   if (deltas.saddleSetbackMm !== undefined) parts.push(`recul ${formatSetupValue(deltas.saddleSetbackMm)}`);
+  if (deltas.saddleTiltDeg !== undefined) parts.push(`inclinaison ${deltas.saddleTiltDeg}°`);
   parts.push(`reach ${formatSetupValue(deltas.reachMm)}`, `drop ${formatSetupValue(deltas.dropMm)}`);
   if (deltas.hasAeroBars !== undefined) parts.push(deltas.hasAeroBars ? 'prolongateurs' : 'sans prolongateurs');
   return parts.join(' · ');
@@ -982,6 +983,7 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
   const [reachMm, setReachMm] = useState(initialDeltas?.reachMm !== undefined ? String(initialDeltas.reachMm) : '');
   const [dropMm, setDropMm] = useState(initialDeltas?.dropMm !== undefined ? String(initialDeltas.dropMm) : '');
   const [hasAeroBars, setHasAeroBars] = useState(initialDeltas?.hasAeroBars ?? false);
+  const [saddleTiltDeg, setSaddleTiltDeg] = useState(initialDeltas?.saddleTiltDeg !== undefined ? String(initialDeltas.saddleTiltDeg) : '');
 
   // Audit fiabilité/ergonomie : le bouton n'était jamais désactivé et Number('') vaut 0, donc un
   // champ laissé vide (recul de selle mis à part, volontairement optionnel — cf. Trial['deltas']
@@ -1007,6 +1009,7 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
                 reachMm: Number(reachMm),
                 dropMm: Number(dropMm),
                 hasAeroBars,
+                ...(saddleTiltDeg.trim() !== '' ? { saddleTiltDeg: Number(saddleTiltDeg) } : {}),
               })
             }
             disabled={!requiredFieldsValid}
@@ -1041,6 +1044,13 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
           onChange={setSaddleSetbackMm}
           suffix="mm"
           hint="Distance horizontale entre l'axe du pédalier et le nez de la selle."
+        />
+        <NumberField
+          label="Inclinaison de selle"
+          value={saddleTiltDeg}
+          onChange={setSaddleTiltDeg}
+          suffix="°"
+          hint="Positif = nez vers le haut, négatif = nez vers le bas. Affichage seulement pour l'instant — aucun seuil sourcé pour le pénaliser sans inventer une fausse précision."
         />
         <NumberField
           label="Reach"

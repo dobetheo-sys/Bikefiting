@@ -287,6 +287,75 @@ describe("AthleteProfile.goal — 'comfort' assouplit tronc/genou sans toucher �
   });
 });
 
+// Correctif d'audit (12/08/2026) : hasAeroBars=false assouplit tronc/genou exactement comme
+// goal='comfort' (cf. describe ci-dessus) — un essai marqué "sans prolongateurs" (position
+// route) n'a pas de raison d'être jugé sur la plage tronc/genou pensée pour une position
+// aéro/TT, même si le profil athlète vise 'aero' par ailleurs.
+describe("hasAeroBars=false assouplit tronc/genou (même mécanisme que goal='comfort')", () => {
+  const aero: AthleteProfile = { hipFlexibilityScore: 3 };
+
+  test('tronc à 35° (hors [5,15]) : exclusoire par défaut (hasAeroBars omis), avertissement si hasAeroBars=false', () => {
+    const t = mkTrial('x', 46, 35, 700, 0, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 });
+    const vDefault = validateTrial(t.angles, aero); // hasAeroBars non fourni -> comportement historique inchangé
+    assert.equal(vDefault.valid, false);
+    assert.equal(vDefault.violations[0]?.param, 'trunk_max');
+
+    const vNoAeroBars = validateTrial(t.angles, aero, false);
+    assert.equal(vNoAeroBars.valid, true);
+    assert.equal(vNoAeroBars.warnings.some((w) => w.param === 'trunk_max'), true);
+  });
+
+  test("hanche sous 40° : reste exclusoire même sans prolongateurs (perte de puissance, pas un style)", () => {
+    const t = mkTrial('x', 36, 10, 700, 0, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 });
+    const v = validateTrial(t.angles, aero, false);
+    assert.equal(v.valid, false);
+    assert.equal(v.violations[0]?.param, 'hip_floor');
+  });
+});
+
+describe('computeComfortScore — weights.knees (correctif audit 12/08/2026 : jusqu\'ici jamais utilisé)', () => {
+  const profile: AthleteProfile = { hipFlexibilityScore: 3 };
+  const neutral: SubjectiveWeights = { neck: 1, lowerBack: 1, hands: 1, knees: 1 };
+
+  test('genou hors plage cible [137,150] + weights.knees élevé -> score plus bas qu\'avec un poids neutre', () => {
+    const t = mkTrial('x', 46, 10, 700, 0, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 });
+    t.angles.knee = { mean: 160, min: 160, max: 160, amplitude: 0, variance: 0 }; // hors [137,150]
+    const scoreNeutral = computeComfortScore(t, profile, neutral);
+    const scoreHighKneeWeight = computeComfortScore(t, profile, { ...neutral, knees: 2 });
+    assert.ok(scoreHighKneeWeight < scoreNeutral, `attendu score plus bas avec weights.knees=2 (neutre=${scoreNeutral}, élevé=${scoreHighKneeWeight})`);
+  });
+
+  test('genou dans la plage cible -> weights.knees élevé n\'a aucun effet (rien à pénaliser)', () => {
+    const t = mkTrial('x', 46, 10, 700, 0, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 }); // knee.mean par défaut = 143, dans [137,150]
+    const scoreNeutral = computeComfortScore(t, profile, neutral);
+    const scoreHighKneeWeight = computeComfortScore(t, profile, { ...neutral, knees: 2 });
+    assert.equal(scoreHighKneeWeight, scoreNeutral);
+  });
+
+  test('hasAeroBars=false -> weights.knees élevé n\'a plus d\'effet (plage aéro non appliquée à ce genou-là)', () => {
+    const t = mkTrial('x', 46, 10, 700, 0, { saddleHeightMm: 745, reachMm: 515, dropMm: 95, hasAeroBars: false });
+    t.angles.knee = { mean: 160, min: 160, max: 160, amplitude: 0, variance: 0 };
+    const scoreNeutral = computeComfortScore(t, profile, neutral);
+    const scoreHighKneeWeight = computeComfortScore(t, profile, { ...neutral, knees: 2 });
+    assert.equal(scoreHighKneeWeight, scoreNeutral);
+  });
+});
+
+describe('suggestNextAdjustment — hasAeroBars=false n\'invente plus une cible aéro non pertinente', () => {
+  const profile: AthleteProfile = { hipFlexibilityScore: 3 };
+
+  test('genou trop plié + hasAeroBars=false -> pas de suggestion (contrairement au même essai avec prolongateurs)', () => {
+    const withAeroBars = mkTrial('t-aero', 46, 10, 700, 2, { saddleHeightMm: 700, reachMm: 515, dropMm: 95 });
+    withAeroBars.angles.knee = { mean: 133, min: 130, max: 145, amplitude: 15, variance: 0.5 }; // min 130 < KNEE_MIN 137
+    const sAero = suggestNextAdjustment(withAeroBars, profile);
+    assert.equal(sAero?.param, 'knee_flexed');
+
+    const withoutAeroBars = mkTrial('t-noaero', 46, 10, 700, 2, { saddleHeightMm: 700, reachMm: 515, dropMm: 95, hasAeroBars: false });
+    withoutAeroBars.angles.knee = { mean: 133, min: 130, max: 145, amplitude: 15, variance: 0.5 };
+    assert.equal(suggestNextAdjustment(withoutAeroBars, profile), null);
+  });
+});
+
 describe('runEngine — validation, scoring, sélection Pareto', () => {
   const profile: AthleteProfile = { hipFlexibilityScore: aslrToFlexScore(75), raceDurationHours: 2.75 };
   const weights: SubjectiveWeights = { neck: 1, lowerBack: 1, hands: 1, knees: 1 };
