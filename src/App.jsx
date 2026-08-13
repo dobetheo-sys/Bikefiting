@@ -15,6 +15,8 @@ import {
   Video,
   Camera,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Circle,
   History,
 } from 'lucide-react';
@@ -364,6 +366,9 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
   const [raceDurationHours, setRaceDurationHours] = useState('2.5');
   const [inseamCm, setInseamCm] = useState('');
   const [goal, setGoal] = useState('aero');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [femurLengthCm, setFemurLengthCm] = useState('');
+  const [torsoLengthCm, setTorsoLengthCm] = useState('');
   const flexScore = aslrToFlexScore(aslrAngle);
   const heightValid = Number(heightCm) > 0;
   const referenceSaddleHeightCm = Number(inseamCm) > 0 ? computeReferenceSaddleHeightCm(Number(inseamCm)) : null;
@@ -377,12 +382,14 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
         <>
           <button
             onClick={() =>
-              onSubmit(
-                Number(heightCm),
-                raceDurationHours ? Number(raceDurationHours) : undefined,
-                Number(inseamCm) > 0 ? Number(inseamCm) : undefined,
-                goal
-              )
+              onSubmit({
+                heightCm: Number(heightCm),
+                raceDurationHours: raceDurationHours ? Number(raceDurationHours) : undefined,
+                inseamCm: Number(inseamCm) > 0 ? Number(inseamCm) : undefined,
+                goal,
+                femurLengthCm: Number(femurLengthCm) > 0 ? Number(femurLengthCm) : undefined,
+                torsoLengthCm: Number(torsoLengthCm) > 0 ? Number(torsoLengthCm) : undefined,
+              })
             }
             disabled={!heightValid}
             className="w-full py-3 rounded-control bg-cyan text-ink font-semibold disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gold flex items-center justify-center gap-2"
@@ -421,6 +428,35 @@ function ProfileForm({ aslrAngle, aslrKneeAngle, onSubmit, onRetakeAslr }) {
           suffix="cm"
           hint="Debout, du sol à l'entrejambe (sans chaussures). Optionnel — sert juste à te suggérer une hauteur de selle de référence si tu ne connais pas déjà ton réglage habituel."
         />
+      </div>
+
+      <div className="mb-6">
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((v) => !v)}
+          className="w-full flex items-center justify-between py-2 text-sm text-text-dim focus:outline-none focus:ring-2 focus:ring-gold rounded"
+        >
+          <span>Mesures avancées (optionnel)</span>
+          {advancedOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+        {advancedOpen && (
+          <div className="space-y-4 mt-2">
+            <NumberField
+              label="Longueur du fémur"
+              value={femurLengthCm}
+              onChange={setFemurLengthCm}
+              suffix="cm"
+              hint="Grand trochanter au condyle latéral du genou. Affichage seulement pour l'instant — le spec le mentionne pour affiner la cible hanche, mais sans formule sourcée on ne l'invente pas (cf. moteur)."
+            />
+            <NumberField
+              label="Longueur du torse"
+              value={torsoLengthCm}
+              onChange={setTorsoLengthCm}
+              suffix="cm"
+              hint="Grand trochanter à l'acromion (haut de l'épaule). Même statut informatif que la longueur de fémur ci-dessus."
+            />
+          </div>
+        )}
       </div>
 
       <div className="mb-6">
@@ -589,6 +625,13 @@ function formatDeltas(deltas) {
   if (deltas.saddleTiltDeg !== undefined) parts.push(`inclinaison ${deltas.saddleTiltDeg}°`);
   parts.push(`reach ${formatSetupValue(deltas.reachMm)}`, `drop ${formatSetupValue(deltas.dropMm)}`);
   if (deltas.hasAeroBars !== undefined) parts.push(deltas.hasAeroBars ? 'prolongateurs' : 'sans prolongateurs');
+  // Champs du panneau "Réglages avancés" (TrialDeltasForm) : n'apparaissent que si l'utilisateur
+  // les a effectivement renseignés, pour ne pas alourdir ce résumé compact dans le cas courant.
+  if (deltas.extensionLengthMm !== undefined) parts.push(`prolongateurs ${formatSetupValue(deltas.extensionLengthMm)}`);
+  if (deltas.padWidthMm !== undefined) parts.push(`coudières ${formatSetupValue(deltas.padWidthMm)}`);
+  if (deltas.extensionTiltDeg !== undefined) parts.push(`angle prolongateurs ${deltas.extensionTiltDeg}°`);
+  if (deltas.crankLengthMm !== undefined) parts.push(`manivelle ${formatSetupValue(deltas.crankLengthMm)}`);
+  if (deltas.cleatPositionMm !== undefined) parts.push(`cale ${formatSetupValue(deltas.cleatPositionMm)}`);
   return parts.join(' · ');
 }
 
@@ -983,7 +1026,13 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
   const [reachMm, setReachMm] = useState(initialDeltas?.reachMm !== undefined ? String(initialDeltas.reachMm) : '');
   const [dropMm, setDropMm] = useState(initialDeltas?.dropMm !== undefined ? String(initialDeltas.dropMm) : '');
   const [hasAeroBars, setHasAeroBars] = useState(initialDeltas?.hasAeroBars ?? false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [saddleTiltDeg, setSaddleTiltDeg] = useState(initialDeltas?.saddleTiltDeg !== undefined ? String(initialDeltas.saddleTiltDeg) : '');
+  const [extensionLengthMm, setExtensionLengthMm] = useState(initialDeltas?.extensionLengthMm !== undefined ? String(initialDeltas.extensionLengthMm) : '');
+  const [padWidthMm, setPadWidthMm] = useState(initialDeltas?.padWidthMm !== undefined ? String(initialDeltas.padWidthMm) : '');
+  const [extensionTiltDeg, setExtensionTiltDeg] = useState(initialDeltas?.extensionTiltDeg !== undefined ? String(initialDeltas.extensionTiltDeg) : '');
+  const [crankLengthMm, setCrankLengthMm] = useState(initialDeltas?.crankLengthMm !== undefined ? String(initialDeltas.crankLengthMm) : '');
+  const [cleatPositionMm, setCleatPositionMm] = useState(initialDeltas?.cleatPositionMm !== undefined ? String(initialDeltas.cleatPositionMm) : '');
 
   // Audit fiabilité/ergonomie : le bouton n'était jamais désactivé et Number('') vaut 0, donc un
   // champ laissé vide (recul de selle mis à part, volontairement optionnel — cf. Trial['deltas']
@@ -991,6 +1040,10 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
   // fabrication qui a l'air d'une vraie mesure nulle. Seuls les 3 champs non-optionnels du type
   // sont requis ici ; recul de selle reste facultatif.
   const requiredFieldsValid = [saddleHeightMm, reachMm, dropMm].every((v) => v.trim() !== '' && Number.isFinite(Number(v)));
+
+  // Champs optionnels du panneau "Réglages avancés" : absents du payload plutôt qu'enregistrés
+  // à 0 quand laissés vides (même garde-fou que requiredFieldsValid ci-dessus).
+  const optionalNumber = (key, value) => (value.trim() !== '' ? { [key]: Number(value) } : {});
 
   return (
     <ScreenShell
@@ -1009,7 +1062,12 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
                 reachMm: Number(reachMm),
                 dropMm: Number(dropMm),
                 hasAeroBars,
-                ...(saddleTiltDeg.trim() !== '' ? { saddleTiltDeg: Number(saddleTiltDeg) } : {}),
+                ...optionalNumber('saddleTiltDeg', saddleTiltDeg),
+                ...optionalNumber('extensionLengthMm', extensionLengthMm),
+                ...optionalNumber('padWidthMm', padWidthMm),
+                ...optionalNumber('extensionTiltDeg', extensionTiltDeg),
+                ...optionalNumber('crankLengthMm', crankLengthMm),
+                ...optionalNumber('cleatPositionMm', cleatPositionMm),
               })
             }
             disabled={!requiredFieldsValid}
@@ -1044,13 +1102,6 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
           onChange={setSaddleSetbackMm}
           suffix="mm"
           hint="Distance horizontale entre l'axe du pédalier et le nez de la selle."
-        />
-        <NumberField
-          label="Inclinaison de selle"
-          value={saddleTiltDeg}
-          onChange={setSaddleTiltDeg}
-          suffix="°"
-          hint="Positif = nez vers le haut, négatif = nez vers le bas. Affichage seulement pour l'instant — aucun seuil sourcé pour le pénaliser sans inventer une fausse précision."
         />
         <NumberField
           label="Reach"
@@ -1094,6 +1145,63 @@ function TrialDeltasForm({ initialDeltas, onSubmit, onCancel }) {
           <p className="text-xs text-text-faint mt-1 leading-relaxed">
             Le vélo est-il équipé de prolongateurs (guidon aéro/triathlon) pour cet essai ? Ça change beaucoup l'aérodynamisme et la position des mains.
           </p>
+        </div>
+
+        <div>
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            className="w-full flex items-center justify-between py-2 text-sm text-text-dim focus:outline-none focus:ring-2 focus:ring-gold rounded"
+          >
+            <span>Réglages avancés (optionnel)</span>
+            {advancedOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+          {advancedOpen && (
+            <div className="space-y-5 mt-2">
+              <NumberField
+                label="Inclinaison de selle"
+                value={saddleTiltDeg}
+                onChange={setSaddleTiltDeg}
+                suffix="°"
+                hint="Positif = nez vers le haut, négatif = nez vers le bas. Affichage seulement pour l'instant — aucun seuil sourcé pour le pénaliser sans inventer une fausse précision."
+              />
+              <NumberField
+                label="Longueur des prolongateurs"
+                value={extensionLengthMm}
+                onChange={setExtensionLengthMm}
+                suffix="mm"
+                hint="Longueur des rallonges/prolongateurs eux-mêmes (pas le reach du cintre). Affichage seulement — l'effet sur la position est déjà capturé par les angles mesurés."
+              />
+              <NumberField
+                label="Écartement des coudières"
+                value={padWidthMm}
+                onChange={setPadWidthMm}
+                suffix="mm"
+                hint="Distance entre le centre des deux coudières. Affichage seulement — l'effet sur l'angle épaule est déjà capturé par la mesure d'angle."
+              />
+              <NumberField
+                label="Angle des prolongateurs"
+                value={extensionTiltDeg}
+                onChange={setExtensionTiltDeg}
+                suffix="°"
+                hint="Inclinaison des rallonges par rapport à l'horizontale. Affichage seulement."
+              />
+              <NumberField
+                label="Longueur de manivelle"
+                value={crankLengthMm}
+                onChange={setCrankLengthMm}
+                suffix="mm"
+                hint="Utile pour comparer deux essais sur des manivelles différentes — l'effet sur l'angle genou/hanche est déjà capturé par la mesure d'angle."
+              />
+              <NumberField
+                label="Position de cale"
+                value={cleatPositionMm}
+                onChange={setCleatPositionMm}
+                suffix="mm"
+                hint="Repère fixe de ton choix (ex. distance entre le talon de la chaussure et le centre de la cale), pour repérer un changement entre deux essais."
+              />
+            </div>
+          )}
         </div>
       </div>
     </ScreenShell>
@@ -1695,10 +1803,10 @@ export default function App() {
     setStage('profile-form');
   }, []);
 
-  const handleProfileSubmit = useCallback((heightCm, raceDurationHours, inseamCm, goal) => {
+  const handleProfileSubmit = useCallback(({ heightCm, raceDurationHours, inseamCm, goal, femurLengthCm, torsoLengthCm }) => {
     setAthleteHeightCm(heightCm);
     setAthleteInseamCm(inseamCm ?? null);
-    setProfile({ hipFlexibilityScore: aslrToFlexScore(aslrAngle), raceDurationHours, goal });
+    setProfile({ hipFlexibilityScore: aslrToFlexScore(aslrAngle), raceDurationHours, goal, femurLengthCm, torsoLengthCm });
     setStage('session');
   }, [aslrAngle]);
 

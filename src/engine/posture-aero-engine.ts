@@ -50,6 +50,14 @@ export interface AthleteProfile {
   // jamais exclusoire). La hanche (HIP_FLOOR_ABS) reste exclusoire dans les deux cas : c'est
   // une perte de puissance mesurée, indépendante du style de position recherché.
   goal?: 'aero' | 'comfort';
+  // femurLengthCm/torsoLengthCm : le §2 du spec les liste comme profil athlète "optionnel,
+  // affine les plages mais pas bloquant en v1" — jamais implémentés jusqu'ici (retour d'audit
+  // 12/08/2026). Optionnels dans le formulaire ET dans le moteur : purement informatifs pour
+  // l'instant (affichés, jamais lus par validateTrial/computeComfortScore) — le spec ne donne
+  // aucune formule pour "affiner" HIP_TARGET_BY_FLEX à partir de la morphologie, l'inventer
+  // serait la fausse précision que ce moteur évite ailleurs (cf. [DEFAULT] vs [SOURCED]).
+  femurLengthCm?: number;
+  torsoLengthCm?: number;
 }
 
 export interface FrontalCapture {
@@ -78,6 +86,17 @@ export interface Trial {
   // formulaire demandait des différences, les utilisateurs entraient naturellement leurs mesures
   // réelles (ex. 745mm de hauteur de selle), ce qui n'a de sens que comme valeur absolue. Le nom
   // du champ est conservé pour ne pas casser les Trial déjà persistés en localStorage.
+  //
+  // extensionLengthMm/padWidthMm/extensionTiltDeg/crankLengthMm/cleatPositionMm : retour d'audit
+  // 12/08/2026 — le spec (§6) liste "longueur prolongateurs" dans les deltas de sortie attendus
+  // sans que le champ ait jamais existé ; écartement/angle des coudières, longueur de manivelle
+  // et position de cale n'étaient mentionnés nulle part alors que ce sont des réglages aéro/bike-fit
+  // courants. Tous optionnels et purement informatifs (comme saddleTiltDeg) : leur EFFET sur la
+  // position est déjà capturé par les angles mesurés (ex. une manivelle plus courte se traduit
+  // directement par un angle genou différent à hauteur de selle égale) — ce sont des champs de
+  // contexte pour comprendre POURQUOI un angle a changé entre deux essais, pas de nouveaux
+  // paramètres de scoring. Groupés dans un panneau "Réglages avancés" replié par défaut côté UI
+  // (TrialDeltasForm) pour ne pas alourdir le formulaire déjà jugé laborieux (retour terrain).
   deltas: {
     saddleHeightMm: number;
     saddleSetbackMm?: number;
@@ -85,6 +104,11 @@ export interface Trial {
     dropMm: number;
     hasAeroBars?: boolean;
     saddleTiltDeg?: number;
+    extensionLengthMm?: number;
+    padWidthMm?: number;
+    extensionTiltDeg?: number;
+    crankLengthMm?: number;
+    cleatPositionMm?: number;
   };
 }
 
