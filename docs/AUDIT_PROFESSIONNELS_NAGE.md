@@ -75,17 +75,23 @@ pas de signal du tout.
 
 ---
 
-## 4. Ingénieur vision par ordinateur avec expérience milieu aquatique — **priorité conditionnelle**
+## 4. Ingénieur vision par ordinateur avec expérience milieu aquatique — **priorité haute/bloquante pour le module sous-marin (mis à jour le 13/08/2026)**
 
-**Valide** : uniquement nécessaire si le projet veut un jour dépasser la contrainte
-fondatrice du §0 (pose estimation sous-marine peu fiable). Pas bloquant pour le V0 tel que
-scopé (au-dessus de l'eau uniquement), mais tout module futur "attaque/traction" en
-dépendrait entièrement — ce n'est pas un ajustement de seuil, c'est un problème de recherche
-appliquée (réfraction, filtrage bulles/reflets, cf. SwimmerNET §9 du spec) qui dépasse le
-niveau d'un ajustement MediaPipe standard.
+**Changement de statut** : décision prise de lancer le module sous-marin (`SPEC_MODULE_SOUS_MARIN.md`,
+option A retenue face aux capteurs portés). Ce profil passe donc de "conditionnel" à
+bloquant pour ce module précis — sans lui, l'étape 1 (tester un modèle standard sur vraie
+vidéo immergée et **mesurer** l'erreur, cf. spec module §3 et §7) ne peut pas être menée
+sérieusement, et l'étape 2 (fine-tuning si besoin) ne peut pas être menée du tout.
 
-**Si sauté** : rester sur le scope V0 (au-dessus de l'eau). C'est un choix de scope valide,
-pas un manque — voir §0 du spec, qui explique pourquoi c'est la bonne limite par défaut.
+**Valide** : le protocole de test de l'étape 1 (quels repères comparer, quelle marge
+d'erreur acceptable pour chaque métrique du §4 du module), et mène l'étape 2 (adaptation de
+domaine / fine-tuning léger) si l'étape 1 montre que c'est nécessaire — ce n'est pas un
+ajustement de seuil, c'est un travail de vision par ordinateur réel (domain shift, cf.
+§1 et §3 du module), même si le montage caméra immergée retenu évite le pire du problème de
+réfraction (§1 du module).
+
+**Si sauté** : le module sous-marin ne peut pas démarrer au-delà d'un essai artisanal non
+mesuré — rester sur le scope V0 (au-dessus de l'eau) reste un repli valide en attendant.
 
 ---
 
@@ -144,8 +150,13 @@ seulement "écrite et non vérifiée contre la réalité".
 2. Entraîneur (point 1) — sans lui, aucun seuil d'interprétation n'est défendable
 3. Biomécanicien (point 2) + Kiné/médecin (point 3) en parallèle — bordent respectivement
    la couche 2 (signaux) et l'avertissement épaule (§6 du spec)
-4. RGPD (point 5) — avant toute captation en club ou hors usage strictement personnel
-5. UX piscine (point 6) — affine l'ergonomie, non bloquant pour un prototype personnel
-6. Vision par ordinateur milieu aquatique (point 4) — seulement si/quand le scope
-   sous-marine (§10 du spec, hors scope V0) est explicitement remis en jeu
+4. Vision par ordinateur milieu aquatique (point 4) — EN PARALLÈLE des points 2-3 depuis le
+   13/08/2026 (module sous-marin lancé, cf. `SPEC_MODULE_SOUS_MARIN.md`) : mène l'étape 1
+   (test mesuré du modèle standard sur vraie vidéo immergée) dès que l'équipement (caisson,
+   support immergé, §2 du module) est disponible — ne dépend pas des points 1-3 pour
+   démarrer
+5. RGPD (point 5) — avant toute captation en club ou hors usage strictement personnel ; à
+   revoir aussi pour le module sous-marin si la captation sort du cadre strictement
+   personnel (piscine publique, autorisation d'installer une caméra immergée)
+6. UX piscine (point 6) — affine l'ergonomie, non bloquant pour un prototype personnel
 ```

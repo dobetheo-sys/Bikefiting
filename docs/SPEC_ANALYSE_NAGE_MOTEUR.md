@@ -240,9 +240,11 @@ validations n'ont pas eu lieu.
   aucune méthode phone-only solo validée trouvée, cf. §0)
 - Dos, brasse, papillon (pipeline de détection de cycle différent par nage)
 - Virages et départs (dynamique différente, zones explicitement exclues du champ caméra V0)
-- Caisson étanche / caméra sous-marine dédiée (GoPro etc.) — changerait la donne technique
-  (résoudrait potentiellement §0) mais casse la contrainte solo-friendly/matériel minimal du
-  reste du projet ; à réévaluer explicitement si un utilisateur a déjà l'équipement
+- ~~Caisson étanche / caméra sous-marine dédiée~~ — **décision prise le 13/08/2026 : ce
+  n'est plus hors scope.** Voir `SPEC_MODULE_SOUS_MARIN.md` (module V1 séparé) : caméra
+  immergée fixe (pas une caméra hors de l'eau regardant à travers la surface, qui elle reste
+  le problème décrit au §0) — casse la contrainte solo-friendly/matériel minimal, assumé
+  explicitement dans ce nouveau module.
 - Comparaison à des références élite/absolues
 
 **Point où l'arbitrage d'un professionnel compte plus qu'ailleurs** : contrairement au vélo,
