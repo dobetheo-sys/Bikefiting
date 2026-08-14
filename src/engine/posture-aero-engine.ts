@@ -128,7 +128,11 @@ export interface ValidationResult {
 export interface ScoredTrial extends Trial {
   validation: ValidationResult;
   comfortScore: number;
+  comfortScoreLow: number;
+  comfortScoreHigh: number;
   aeroScore: number;
+  aeroScoreLow: number;
+  aeroScoreHigh: number;
 }
 
 export interface SubjectiveWeights {
@@ -325,12 +329,17 @@ function quadPenalty(distance: number, scale: number, cap = 40): number {
   return Math.min(cap, scale * distance * distance);
 }
 
-export function computeComfortScore(t: Trial, profile: AthleteProfile, weights: SubjectiveWeights): number {
+// penaltyScale : multiplicateur appliqué à TOUTES les échelles de pénalité ci-dessous (0.3/0.5/
+// 0.4/0.4, plus le ×2 de la pénalité de variance) — valeurs [DEFAULT], non sourcées, cf. §9 du
+// spec ("Poids ... confort (pondérations) : Non sourcé — défaut d'ingénierie [...] pas une
+// vérité biomécanique"). Sert uniquement à computeComfortScoreRange ci-dessous pour donner une
+// plage de sensibilité ; = 1 => comportement exactement inchangé pour tout appelant existant.
+export function computeComfortScore(t: Trial, profile: AthleteProfile, weights: SubjectiveWeights, penaltyScale = 1): number {
   let score = 100;
 
   const hipTarget = HIP_TARGET_BY_FLEX[profile.hipFlexibilityScore];
   const hipGap = Math.max(0, hipTarget - t.angles.hip.mean); // en dessous de la cible = pénalité croissante
-  score -= quadPenalty(hipGap, 0.3) * weights.lowerBack;
+  score -= quadPenalty(hipGap, 0.3 * penaltyScale) * weights.lowerBack;
 
   // Le tronc et le genou ne sont pénalisés par rapport à leur plage aéro sourcée qu'en objectif
   // 'aero' AVEC prolongateurs (hasAeroBars) — même gating que validateTrial (aeroRangeIsExclusionary
@@ -343,7 +352,7 @@ export function computeComfortScore(t: Trial, profile: AthleteProfile, weights: 
     const trunkMid = (TRUNK_MIN + TRUNK_MAX) / 2;
     const trunkHalfRange = (TRUNK_MAX - TRUNK_MIN) / 2;
     const trunkGap = Math.abs(t.angles.trunk.mean - trunkMid) - trunkHalfRange;
-    score -= quadPenalty(trunkGap, 0.5) * weights.neck;
+    score -= quadPenalty(trunkGap, 0.5 * penaltyScale) * weights.neck;
 
     // Correctif d'audit (12/08/2026) : weights.knees existe (recalibré par le feedback douleur
     // genoux, cf. recalibrateWeights) mais n'était utilisé nulle part ici — un retour "genoux"
@@ -353,15 +362,15 @@ export function computeComfortScore(t: Trial, profile: AthleteProfile, weights: 
     const kneeMid = (KNEE_MIN + KNEE_MAX) / 2;
     const kneeHalfRange = (KNEE_MAX - KNEE_MIN) / 2;
     const kneeGap = Math.abs(t.angles.knee.mean - kneeMid) - kneeHalfRange;
-    score -= quadPenalty(kneeGap, 0.4) * weights.knees;
+    score -= quadPenalty(kneeGap, 0.4 * penaltyScale) * weights.knees;
   }
 
   // Stabilité inter-cycles : variance élevée = moins fiable / moins confortable sur la durée
-  score -= Math.min(15, (t.angles.hip.variance + t.angles.trunk.variance) * 2);
+  score -= Math.min(15, (t.angles.hip.variance + t.angles.trunk.variance) * 2 * penaltyScale);
 
   // Poignet : coûte du confort au-delà du seuil, même s'il ne bloque pas la validité
   const wristGap = Math.max(0, t.angles.wrist.mean - WRIST_WARN);
-  score -= quadPenalty(wristGap, 0.4) * weights.hands;
+  score -= quadPenalty(wristGap, 0.4 * penaltyScale) * weights.hands;
 
   return Math.max(0, Math.min(100, round1(score)));
 }
@@ -370,7 +379,10 @@ export function computeComfortScore(t: Trial, profile: AthleteProfile, weights: 
 
 const AERO_WEIGHTS = { pfsa: 0.65, trunk: 0.25, head: 0.10 }; // [DEFAULT] pondération de départ, à calibrer (§10)
 
-export function computeAeroScore(t: Trial, cohortMaxPFSANorm: number): number {
+// weights : paramétrable uniquement pour computeAeroScoreRange ci-dessous (plage de sensibilité
+// sur cette même pondération [DEFAULT]) — défaut = AERO_WEIGHTS, comportement inchangé pour tout
+// appelant existant.
+export function computeAeroScore(t: Trial, cohortMaxPFSANorm: number, weights = AERO_WEIGHTS): number {
   const pfsaNorm = t.frontal.pFSA_cm2 / t.frontal.athleteHeight_cm;
   // Audit fiabilité : sans ce garde-fou, cohortMaxPFSANorm === 0 (tous les essais de la session
   // à pFSA=0 — ex. segmentation ayant échoué sur toute la session, photos trop sombres/mal
@@ -386,8 +398,49 @@ export function computeAeroScore(t: Trial, cohortMaxPFSANorm: number): number {
   const headPenalty = Math.min(30, Math.abs(t.frontal.headOffset_cm) * 5);
   const headScore = 100 - headPenalty;
 
-  const raw = AERO_WEIGHTS.pfsa * pfsaScore + AERO_WEIGHTS.trunk * trunkScore + AERO_WEIGHTS.head * headScore;
+  const raw = weights.pfsa * pfsaScore + weights.trunk * trunkScore + weights.head * headScore;
   return Math.max(0, Math.min(100, round1(raw)));
+}
+
+// ---------- Plages de sensibilité (audit 13/08/2026) ----------
+// comfort_score/aero_score s'affichaient comme des chiffres uniques qui ont l'air plus précis
+// qu'ils ne le sont : les pondérations qui les calculent sont explicitement [DEFAULT]/"non
+// sourcé — défaut d'ingénierie [...] pas une vérité biomécanique" (§9 du spec). Plutôt que
+// d'inventer une plage statistique sur l'erreur de mesure (qu'on ne peut pas quantifier sans
+// données réelles — la même fausse précision que ce moteur évite déjà ailleurs), on calcule le
+// score sous 2 variantes plausibles de CES MÊMES constantes non sourcées et on affiche la plage
+// résultante : une mesure honnête de la sensibilité du score à des réglages jamais validés
+// empiriquement, pas une estimation de la précision de la mesure elle-même.
+export interface ScoreRange {
+  score: number;
+  low: number;
+  high: number;
+}
+
+const COMFORT_SENSITIVITY_SPREAD = 0.2; // [DEFAULT] ±20%, choix arbitraire explicite — non sourcé
+
+export function computeComfortScoreRange(t: Trial, profile: AthleteProfile, weights: SubjectiveWeights): ScoreRange {
+  const score = computeComfortScore(t, profile, weights);
+  // Moins de pénalité (échelle réduite) -> score plus haut ; plus de pénalité -> score plus bas.
+  // Triés par Math.min/max plutôt que supposé dans cet ordre, pour rester correct même si le
+  // sens changeait un jour (ex. nouvelle composante de score qui inverserait la direction).
+  const generous = computeComfortScore(t, profile, weights, 1 - COMFORT_SENSITIVITY_SPREAD);
+  const strict = computeComfortScore(t, profile, weights, 1 + COMFORT_SENSITIVITY_SPREAD);
+  return { score, low: Math.min(generous, strict), high: Math.max(generous, strict) };
+}
+
+// 2 répartitions alternatives plausibles de AERO_WEIGHTS (la pFSA mesurée reste dominante dans
+// les 2 — rien ne remet ça en cause, cf. spec §5 — seule l'AMPLEUR du poids varie) : pas une
+// vraie distribution statistique, juste de quoi donner une idée de la sensibilité du score à ce
+// choix non sourcé.
+const AERO_WEIGHTS_LOW_PFSA = { pfsa: 0.5, trunk: 0.35, head: 0.15 };
+const AERO_WEIGHTS_HIGH_PFSA = { pfsa: 0.8, trunk: 0.15, head: 0.05 };
+
+export function computeAeroScoreRange(t: Trial, cohortMaxPFSANorm: number): ScoreRange {
+  const score = computeAeroScore(t, cohortMaxPFSANorm);
+  const a = computeAeroScore(t, cohortMaxPFSANorm, AERO_WEIGHTS_LOW_PFSA);
+  const b = computeAeroScore(t, cohortMaxPFSANorm, AERO_WEIGHTS_HIGH_PFSA);
+  return { score, low: Math.min(a, b), high: Math.max(a, b) };
 }
 
 // ---------- §6 — Front de Pareto + sélection des 3 profils ----------
@@ -440,12 +493,19 @@ export function recalibrateWeights(current: SubjectiveWeights, history: Feedback
 // ---------- Pipeline complet (§8 — format de sortie) ----------
 
 export function runEngine(trials: Trial[], profile: AthleteProfile, weights: SubjectiveWeights) {
-  const scored: ScoredTrial[] = trials.map((t) => ({
-    ...t,
-    validation: validateTrial(t.angles, profile, t.deltas.hasAeroBars),
-    comfortScore: computeComfortScore(t, profile, weights),
-    aeroScore: 0, // calculé après normalisation cohort ci-dessous
-  }));
+  const scored: ScoredTrial[] = trials.map((t) => {
+    const comfort = computeComfortScoreRange(t, profile, weights);
+    return {
+      ...t,
+      validation: validateTrial(t.angles, profile, t.deltas.hasAeroBars),
+      comfortScore: comfort.score,
+      comfortScoreLow: comfort.low,
+      comfortScoreHigh: comfort.high,
+      aeroScore: 0, // calculé après normalisation cohort ci-dessous
+      aeroScoreLow: 0,
+      aeroScoreHigh: 0,
+    };
+  });
 
   const validTrials = scored.filter((t) => t.validation.valid);
   const excluded = scored
@@ -469,7 +529,10 @@ export function runEngine(trials: Trial[], profile: AthleteProfile, weights: Sub
   const pfsaNorms = validTrials.map((t) => t.frontal.pFSA_cm2 / t.frontal.athleteHeight_cm).filter(Number.isFinite);
   const cohortMaxPFSANorm = pfsaNorms.length > 0 ? Math.max(...pfsaNorms) : 0;
   validTrials.forEach((t) => {
-    t.aeroScore = computeAeroScore(t, cohortMaxPFSANorm);
+    const aero = computeAeroScoreRange(t, cohortMaxPFSANorm);
+    t.aeroScore = aero.score;
+    t.aeroScoreLow = aero.low;
+    t.aeroScoreHigh = aero.high;
   });
 
   const front = paretoFront(validTrials);
@@ -492,7 +555,11 @@ function toOutputProfile(t: ScoredTrial) {
   return {
     trial_id: t.id,
     comfort_score: t.comfortScore,
+    comfort_score_low: t.comfortScoreLow,
+    comfort_score_high: t.comfortScoreHigh,
     aero_score: t.aeroScore,
+    aero_score_low: t.aeroScoreLow,
+    aero_score_high: t.aeroScoreHigh,
     // angles : ajouté pour la tendance entre sessions (amélioration §4, App.jsx/TrendScreen) —
     // ProfileCard ne s'en sert pas (juste comfort_score/aero_score/deltas), mais un graphe
     // hanche/tronc/genou dans le temps en a besoin. Champ additif, ne casse aucun consommateur

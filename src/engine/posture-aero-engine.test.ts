@@ -6,7 +6,9 @@ import {
   suggestNextAdjustment,
   validateTrial,
   computeComfortScore,
+  computeComfortScoreRange,
   computeAeroScore,
+  computeAeroScoreRange,
   runEngine,
   recalibrateWeights,
   type Trial,
@@ -353,6 +355,77 @@ describe('suggestNextAdjustment — hasAeroBars=false n\'invente plus une cible 
     const withoutAeroBars = mkTrial('t-noaero', 46, 10, 700, 2, { saddleHeightMm: 700, reachMm: 515, dropMm: 95, hasAeroBars: false });
     withoutAeroBars.angles.knee = { mean: 133, min: 130, max: 145, amplitude: 15, variance: 0.5 };
     assert.equal(suggestNextAdjustment(withoutAeroBars, profile), null);
+  });
+});
+
+// Audit 13/08/2026 : comfort_score/aero_score s'affichaient comme des chiffres uniques —
+// computeComfortScoreRange/computeAeroScoreRange donnent une plage de sensibilité en perturbant
+// les pondérations [DEFAULT] (non sourcées, §9 du spec) qui les calculent. Le score au centre
+// (low <= score <= high) et pénaltyScale=1/AERO_WEIGHTS par défaut préservent exactement le
+// comportement de computeComfortScore/computeAeroScore pour tout appelant existant (déjà vérifié
+// par les 66 tests ci-dessus, tous inchangés).
+describe('computeComfortScoreRange — plage de sensibilité (audit 13/08/2026)', () => {
+  const profile: AthleteProfile = { hipFlexibilityScore: 3 };
+  const weights: SubjectiveWeights = { neck: 1, lowerBack: 1, hands: 1, knees: 1 };
+
+  test('low <= score <= high, et score = computeComfortScore (comportement identique)', () => {
+    const t = mkTrial('x', 46, 10, 700, 2, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 });
+    const r = computeComfortScoreRange(t, profile, weights);
+    assert.equal(r.score, computeComfortScore(t, profile, weights));
+    assert.ok(r.low <= r.score, `low=${r.low} devrait être <= score=${r.score}`);
+    assert.ok(r.score <= r.high, `score=${r.score} devrait être <= high=${r.high}`);
+  });
+
+  test('essai loin des cibles (tronc à 21°) -> plage plus large qu\'un essai bien centré', () => {
+    // tronc = 21° donne un écart de 6° à la plage [5,15] (gap = |21-10|-5 = 6) : assez pour
+    // s'écarter nettement sans saturer le plafond cap=40 de quadPenalty des deux côtés de la
+    // perturbation ±20% (0.5×0.8×6² = 14.4, 0.5×1.2×6² = 21.6, tous deux < 40) — avec une valeur
+    // trop extrême (35° testé initialement), les deux variantes plafonnent à 40 et la plage
+    // devient artificiellement identique à un essai centré, ce qui teste le plafond, pas la
+    // sensibilité.
+    const centered = mkTrial('centered', 46, 10, 700, 2, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 });
+    const off = mkTrial('off', 46, 21, 700, 2, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 });
+    const rCentered = computeComfortScoreRange(centered, profile, weights);
+    const rOff = computeComfortScoreRange(off, profile, weights);
+    const widthCentered = rCentered.high - rCentered.low;
+    const widthOff = rOff.high - rOff.low;
+    assert.ok(widthOff > widthCentered, `attendu plage plus large hors cible (centré=${widthCentered}, hors cible=${widthOff})`);
+  });
+
+  test('essai parfaitement centré ET variance nulle -> plage nulle, rien à quoi être sensible', () => {
+    // hanche exactement à la cible (46 pour flex 3), tronc au centre de [5,15] (=10), genou au
+    // centre de [137,150] (=143.5), variance/poignet à 0 : quadPenalty(distance<=0)=0 et la
+    // pénalité de variance (elle aussi mise à l'échelle par penaltyScale) tombe à 0 aussi —
+    // perturber penaltyScale ne change donc rien -> low=high=100. (mkTrial() n'est pas utilisé
+    // ici : ses variance hanche/tronc par défaut, 1.2/0.8, sont non nulles et donneraient une
+    // plage non nulle même à gap=0, cf. le test de largeur ci-dessus.)
+    const centeredTrial: Trial = {
+      id: 'perfect',
+      angles: {
+        hip: { mean: 46, min: 46, max: 46, amplitude: 0, variance: 0 },
+        trunk: { mean: 10, min: 10, max: 10, amplitude: 0, variance: 0 },
+        knee: { mean: 143.5, min: 143.5, max: 143.5, amplitude: 0, variance: 0 },
+        ankle: { mean: 0, min: 0, max: 0, amplitude: 0, variance: 0 },
+        wrist: { mean: 0, min: 0, max: 0, amplitude: 0, variance: 0 },
+        shoulder: { mean: 60, min: 60, max: 60, amplitude: 0, variance: 0 },
+        elbow: { mean: 150, min: 150, max: 150, amplitude: 0, variance: 0 },
+      },
+      frontal: { pFSA_cm2: 700, athleteHeight_cm: 178, headOffset_cm: 2 },
+      deltas: { saddleHeightMm: 745, reachMm: 515, dropMm: 95 },
+    };
+    const r = computeComfortScoreRange(centeredTrial, profile, weights);
+    assert.equal(r.low, 100);
+    assert.equal(r.high, 100);
+  });
+});
+
+describe('computeAeroScoreRange — plage de sensibilité (audit 13/08/2026)', () => {
+  test('low <= score <= high, et score = computeAeroScore (comportement identique)', () => {
+    const t = mkTrial('x', 46, 10, 700, 2, { saddleHeightMm: 745, reachMm: 515, dropMm: 95 });
+    const r = computeAeroScoreRange(t, 5);
+    assert.equal(r.score, computeAeroScore(t, 5));
+    assert.ok(r.low <= r.score, `low=${r.low} devrait être <= score=${r.score}`);
+    assert.ok(r.score <= r.high, `score=${r.score} devrait être <= high=${r.high}`);
   });
 });
 

@@ -1217,11 +1217,21 @@ function ProfileCard({ title, accent, profile }) {
       <div className="flex gap-6 mb-2">
         <div>
           <div className="font-display text-4xl text-text">{profile.comfort_score}</div>
-          <div className="text-xs text-text-faint">confort</div>
+          <div className="text-xs text-text-faint">
+            confort
+            {profile.comfort_score_low !== undefined && (
+              <span className="font-mono"> · {profile.comfort_score_low}–{profile.comfort_score_high}</span>
+            )}
+          </div>
         </div>
         <div>
           <div className="font-display text-4xl text-text">{profile.aero_score}</div>
-          <div className="text-xs text-text-faint">aéro</div>
+          <div className="text-xs text-text-faint">
+            aéro
+            {profile.aero_score_low !== undefined && (
+              <span className="font-mono"> · {profile.aero_score_low}–{profile.aero_score_high}</span>
+            )}
+          </div>
         </div>
       </div>
       <div className="text-xs text-text-faint font-mono">{formatDeltas(profile.deltas)}</div>
@@ -1686,6 +1696,12 @@ function ResultsScreen({ result, onBack, backLabel = 'Retour à la session' }) {
                 {/* Convention couleur de l'appli (restyle Zenna) : orange = selle/confort, or =
                     équilibré, cyan = cintre/aéro — même mapping que PROFILE_SERIES/TrendChart et
                     le schéma BikeDeltasDiagram, à garder synchronisés si l'un des 3 change. */}
+                {result.profiles.confort_max?.comfort_score_low !== undefined && (
+                  <p className="text-xs text-text-faint leading-relaxed -mt-1 mb-1">
+                    La plage à côté de chaque score reflète sa sensibilité aux réglages du moteur qui ne sont pas
+                    sourcés par la littérature (cf. spec §9) — pas une marge d'erreur de mesure.
+                  </p>
+                )}
                 <ProfileCard title="Confort max" accent="text-orange" profile={result.profiles.confort_max} />
                 <ProfileCard title="Équilibré" accent="text-gold" profile={result.profiles.equilibre} />
                 <ProfileCard title="Aéro max" accent="text-cyan" profile={result.profiles.aero_max} />
