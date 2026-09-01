@@ -1,5 +1,22 @@
 # Handoff — posture-aero, V1
 
+> ## ⚠️ DOCUMENT HISTORIQUE — PÉRIMÉ, NE PAS SUIVRE
+>
+> Instantané de l'état du repo au **08/08/2026**, conservé pour la traçabilité des décisions.
+> Il décrit un pipeline de mesure d'angles **automatique** (MediaPipe `PoseLandmarker`,
+> `pose-integration.ts`, `video-frame-sampler.ts`) qui **a été abandonné les 10-11/08/2026**
+> après des échecs répétés sur de vraies vidéos : la mesure des angles se fait désormais
+> **manuellement**, l'utilisateur tapant les points articulaires sur une image qu'il choisit
+> lui-même (`TapImage`/`TapLoupe` dans `PostureCaptureFlow.jsx`).
+>
+> Les chiffres et l'état d'avancement ci-dessous sont également dépassés (24-29 tests à
+> l'époque, 70 aujourd'hui ; ni l'historique, ni la tendance, ni la boucle de feedback, ni le
+> restyle n'existaient encore).
+>
+> **Documents à jour :** `README.md` (état réel du repo) et `docs/INTEGRATION_HANDOFF.md`
+> (pour intégrer l'outil dans une autre app). La spec fonctionnelle
+> `docs/SPEC_POSTURE_AERO_MOTEUR.md`, elle, reste valable.
+
 Repo initié hors de Claude Code (conversation Claude.ai, 06/08/2026). Toute la logique pure
 est écrite et testée (`npm test`, 29/29 passants). Session Claude Code du 06/08/2026 (suite) :
 shell Vite, ImageSegmenter réel, PoseLandmarker réel, test ASLR (souplesse hanche), et

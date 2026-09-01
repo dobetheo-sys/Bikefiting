@@ -9,6 +9,17 @@ décisions à NE PAS défaire (plusieurs ont été prises après des échecs ter
 - **Spec fonctionnelle** : `docs/SPEC_POSTURE_AERO_MOTEUR.md` (dans ce repo) — à lire avant de
   toucher au moteur de scoring, elle explique quels seuils sont sourcés et lesquels ne le sont pas.
 
+> **Si un autre document du repo te dit le contraire de celui-ci, tranche toi-même en 10 secondes.**
+> `HANDOFF_CLAUDE_CODE.md` est un instantané daté du 08/08/2026, antérieur au passage à la mesure
+> manuelle (10-11/08) — il porte désormais un bandeau "document historique". En cas de doute, ces
+> 3 commandes font foi, pas la prose :
+>
+> ```bash
+> grep -c "pose-integration\|extractTrialAngles" src/App.jsx   # 0 attendu = pipeline auto mort
+> grep -c "TapImage\|TapLoupe" src/components/PostureCaptureFlow.jsx  # > 0 = pointage manuel actif
+> npm test                                                      # 70 tests attendus
+> ```
+
 ---
 
 ## 1. Ce que fait l'outil
