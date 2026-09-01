@@ -244,6 +244,27 @@ sont regroupés dans un panneau replié par défaut. Ne pas les remonter dans le
 
 À connaître pour ne pas les prendre pour des bugs :
 
+- **`headOffset_cm` (position de la tête, 10% du score aéro) est un stub à 0**, jamais mesuré
+  (`App.jsx`, à la construction du `Trial`). Attention à l'interprétation : `headPenalty =
+  min(30, |0| × 5) = 0`, donc `headScore` vaut **100, sa valeur maximale**, pour tous les essais.
+  Le score aéro absolu est donc *majoré* d'un +10 constant, pas minoré — et surtout, comme cette
+  contribution est identique pour tous les essais d'une session, elle **n'affecte pas le
+  classement relatif** entre essais, ni le front de Pareto, ni le choix des 3 positions. Or
+  c'est exactement ce à quoi le score aéro sert (comparaison intra-utilisateur, jamais une
+  valeur absolue comparable à un autre coureur — cf. spec §5). Dérivable de la photo frontale
+  déjà capturée (nez vs ligne d'épaules, même calibration que la pFSA) si on veut le câbler.
+- **La segmentation MediaPipe n'a jamais tourné contre une vraie photo.** Le calcul de la pFSA
+  est donc la seule brique du parcours dont la sortie n'a pas été vérifiée sur données réelles
+  (blocage réseau du sandbox de dev, cf. README). L'ordre de grandeur attendu est **~3000-4500 cm²**
+  en position aéro adulte (spec §5) : à confronter dès le premier test sur appareil réel. Si la
+  valeur en sort de plusieurs ordres de grandeur, chercher du côté de la calibration (2 taps sur
+  un repère de longueur connue) avant de suspecter le modèle.
+- **iOS 13+ : `DeviceOrientationEvent.requestPermission()` n'est pas appelé.** L'app écoute
+  `deviceorientation` directement (`PostureCaptureFlow.jsx`). Sur iOS l'événement n'arrivera
+  jamais sans la demande de permission explicite : `tilt` reste `null`, et l'indicateur de niveau
+  n'est simplement pas rendu. Dégradation silencieuse, pas de crash — mais pas d'indicateur de
+  niveau non plus. À vérifier explicitement **sur un iPhone** à l'étape 3 du §8, pas seulement
+  sur Android.
 - **Amplitude de cheville** (`ankle.amplitude`) toujours à 0 : non mesurable sur 2 images fixes.
   Le warning `ankle_unstable` (seuil sourcé, 22°) ne peut donc jamais se déclencher. Décision
   documentée dans `capture-processing.ts`, et la littérature elle-même doute de la pertinence de
@@ -268,7 +289,14 @@ sont regroupés dans un panneau replié par défaut. Ne pas les remonter dans le
 3. Monter `PostureCaptureFlow` seul, sur un écran de test, avec `initialMode="aslr_test"` —
    c'est le composant le plus délicat (caméra, permissions, pointage) et le valider isolément
    évite de déboguer deux choses à la fois. **À tester sur un vrai téléphone**, pas seulement en
-   desktop : caméra, wake lock et pointage tactile ne se vérifient pas autrement.
+   desktop : caméra, wake lock et pointage tactile ne se vérifient pas autrement. Trois choses à
+   vérifier spécifiquement à cette étape, jamais validées jusqu'ici (cf. §7) :
+   - **sur un iPhone** (pas seulement Android) : l'indicateur de niveau apparaît-il ? S'il est
+     absent, c'est `DeviceOrientationEvent.requestPermission()` qui manque, pas un bug d'intégration ;
+   - **en `initialMode="frontal_photo"`** : la pFSA calculée tombe-t-elle dans ~3000-4500 cm² ?
+     C'est le premier passage de la segmentation MediaPipe sur une vraie photo ;
+   - le chargement du modèle MediaPipe lui-même (bloqué par le proxy du sandbox de dev, donc
+     jamais exécuté de bout en bout).
 4. Monter `App.jsx` comme écran de l'outil, ajuster `ScreenShell` au chrome de l'app principale,
    décider du point d'entrée (`welcome` ou directement `aslr-capture`).
 5. Décider du sort des 4 clés localStorage (garder tel quel, ou brancher sur le backend).
